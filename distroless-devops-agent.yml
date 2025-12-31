@@ -89,8 +89,10 @@ jobs:
         # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
         ls -lha
         echo CRITICAL SCAN START
+        trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
         trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
         echo NON-CRITICAL SCAN START
+        trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
         trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)
         ls -lha
         echo SCAN FINISHED
