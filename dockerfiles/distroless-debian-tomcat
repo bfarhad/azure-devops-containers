@@ -4,7 +4,7 @@ ARG TOMCAT_V_VERSION
 ARG TOMCAT_VERSION
 
 ENV CATALINA_BASE="/opt/apache-tomcat-10"
-ENV JAVA_HOME="/opt/java"
+ENV JAVA_HOME="/java"
 
 RUN apt-get -q update; \
   apt-get -q install -y curl tar \
@@ -12,41 +12,27 @@ RUN apt-get -q update; \
   && curl -Ls \
     https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz \
     | tar -xz -C $TMP_DIR --strip-components=1 \
-  && mv $TMP_DIR /opt/java
+  && mv $TMP_DIR /java
 
 RUN apt-get update; \
-  apt-get -y install curl tar dpkg-dev gcc libapr1-dev libssl-dev make \
+  apt-get -y install curl tar \
   && TOMCAT_TMP_DIR=$(mktemp -d) \
   && curl -Ls \
-    https://dlcdn.apache.org/tomcat/tomcat-10/${TOMCAT_V_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz \
+    https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.24/bin/apache-tomcat-10.1.24.tar.gz \
     | tar -xz -C $TOMCAT_TMP_DIR --strip-components=1 \
-  && cp -r $TOMCAT_TMP_DIR/ $CATALINA_BASE \
-  && NATIVE_BUILD_DIR=$(mktemp -d) \
-  && tar -xf $TOMCAT_TMP_DIR/bin/tomcat-native.tar.gz -C $NATIVE_BUILD_DIR --strip-components=1 \
-  && cd $NATIVE_BUILD_DIR/native \
-  && gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)" \
-  && aprConfig="$(command -v apr-1-config)" \
-  && ./configure \
-    LDFLAGS="-static" \
-    --build="$gnuArch" \
-    --libdir="${CATALINA_BASE}/native_lib" \
-    --prefix="/opt/apache-tomcat-10" \
-    --with-apr="$aprConfig" \
-    --with-java-home="$JAVA_HOME" \
-    --with-ssl=yes \
-  && make -j "$(nproc)" \
-  && make install
+  && cp -r $TOMCAT_TMP_DIR/ $CATALINA_BASE
 
-FROM gcr.io/distroless/base:latest
+FROM gcr.io/distroless/base:debug
 
 LABEL "Base"="google distroless on debian 10" \
   "release"="dev" \
   "owner"="Vi"
 
+ENV JAVA_HOME=/java
 ENV CATALINA_BASE=/opt/apache-tomcat-10
 ENV CATALINA_HOME=$CATALINA_BASE
 ENV CLASSPATH=$CATALINA_BASE/bin/bootstrap.jar:$CATALINA_BASE/bin/tomcat-juli.jar
-ENV PATH=$PATH:$CATALINA_BASE/bin
+ENV PATH=$PATH:$CATALINA_BASE/bin:/java/bin
 ENV LD_LIBRARY_PATH $LD_LIBRARY_PATH:/opt/apache-tomcat-10/native_lib
 ENV _JAVA_OPTIONS="\
 $CATALINA_OPTS \
