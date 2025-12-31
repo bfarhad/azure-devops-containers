@@ -116,3 +116,13 @@ jobs:
       failTaskOnFailedTests: false
       testRunTitle: 'Trivy - Low and Medium Vulnerabilities'
     condition: 'always()'
+
+  - task: CopyFiles@2
+    inputs:
+        contents: '_buildOutput/**'
+        targetFolder: $(Build.ArtifactStagingDirectory)
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+        pathToPublish: $(Build.ArtifactStagingDirectory)
+        artifactName: ScanReports

@@ -148,18 +148,42 @@ jobs:
     - task: CmdLine@2
       displayName: "Run trivy scan"
       inputs:
-        script: |
-          echo "LOW AND MEDIUM VULNERABILITIES"
-          trivy image --format table --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag)
-          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
-          echo "HIGH AND CRITICAL VULNERABILITIES"
-          trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
-          trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
+      script: |
+        # trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag)
+        # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
+        ls -lha       
+        echo CRITICAL SCAN START
+        trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
+        trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
+        echo NON-CRITICAL SCAN START
+        trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
+        trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)
+        # trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
+        # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
+        ls -lha
+        echo SCAN FINISHED
 
-          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
-          trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
+ 
 
-          echo SCAN FINISHED
+    - task: PublishTestResults@2
+      displayName: "Publish critical scan result"
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/junit-report-high-crit.xml'
+        mergeTestResults: true
+        failTaskOnFailedTests: false
+        testRunTitle: 'Trivy - High and Critical Vulnerabilities'
+      condition: 'always()'  
+
+    - task: PublishTestResults@2
+      displayName: "Publish non-critical scan result"
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/junit-report-low-med.xml'
+        mergeTestResults: true
+        failTaskOnFailedTests: false
+        testRunTitle: 'Trivy - Low and Medium Vulnerabilities'
+      condition: 'always()'  
 
     - task: CopyFiles@2
       inputs:
