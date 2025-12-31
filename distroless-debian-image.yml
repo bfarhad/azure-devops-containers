@@ -1,0 +1,211 @@
+# This pipeline builds OpenJDK (Amazon's Corretto) base images. # Build is based on Google's
+# distroless Debian image (https://github.com/GoogleContainerTools/distroless)
+#
+# Before final image is pushed to ACR, it's scanned by Aqua Scanner. If image doesn't pass Aqua's policy,
+# pipeline is stopped and image isn't pushed to ACR. To resolve it, you need either to fix the CVE(s),
+# or acknowledge each CVE in Aqua's web-UI under CI/CD tab.
+#
+# Resulting image name is:
+# distroless-[static|base]-debian[10|11]-corretto[8|11|17|21]
+# Resulting tag name is:
+# $correttoVersion-$date-$buildI (e.g., 21.x.x-20231231-123456)
+#
+# Google's distroless image versioning:
+# - Major Debian's version is set by "baseImageDebianVersion" variable
+# - Always latest minor version is pulled
+#
+# Corretto versioning:
+# - Major version is set by "correttoVersionMajor" variable
+# - Always latest minor version is downloaded
+
+trigger:
+- master
+
+parameters:
+  # Debian release version
+  - name: baseImageDebianVersion
+    displayName: "Select Debian major release version:"
+    type: number
+    default: 11
+    values:
+    - 10
+    - 11
+  # GCR's distroless-base-image type
+  # Passed to Dockerfile and used by FROM command
+  # static: no glibc and openssl
+  # base: includes glibc and openssl
+  # More info at https://github.com/GoogleContainerTools/distroless
+  - name: baseImageFlavor
+    displayName: "Select GCR image type:"
+    type: string
+    default: base
+    values:
+    - static
+    - base
+  # Corretto's version to download and build image with
+  - name: correttoVersionMajor
+    displayName: "Select Corretto major version:"
+    type: number
+    default: 21
+    values:
+    - 8
+    - 11
+    - 17
+    - 21
+
+variables:
+  # ACR where to push new image
+  - name: acrName
+    value: "cloudladderacr.azurecr.io"
+  # Options: static, base
+  - name: baseImageFlavor
+    value: ${{ parameters.baseImageFlavor }}
+  # Passed to Dockerfile and used by FROM command
+  # Options: "10", "11"
+  - name: baseImageDebianVersion
+    value: ${{ parameters.baseImageDebianVersion }}
+  - name: correttoVersionMajor
+    value: ${{ parameters.correttoVersionMajor }}
+  # Global variable to be used in different tasks/jobs/stages
+  - name: correttoVersionFull
+    value: "willBeSetByBashTask"
+  # Global variable to be used in different tasks/jobs/stages
+  - name: baseImageName
+    value: "willBeSetByBashTask"
+    # Global variable to be used in different tasks/jobs/stages
+  - name: imageName
+    value: "willBeSetByBashTask"
+  # Global variable to be used in different tasks/jobs/stages
+  - name: imageTag
+    value: "willBeSetByBashTask"
+  # Dokerfile argument passed to "docker build"
+  - name: dockerfilePath
+    value: "willBeSetByBashTask"
+  - name: trivyVersion
+    value: '0.36.1'
+
+pool: Azure Pipelines
+  #vmImage: ubuntu-latest
+
+jobs:
+- job:
+  displayName: Build distroless Debian-based image (based on gcr.io/distroless) with Amazon Corretto OpenJDK
+  timeoutInMinutes: 0
+  steps:
+  - checkout: self
+  
+  - script: |
+      sudo apt-get install rpm
+      wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.deb
+
+      sudo dpkg -i trivy_$(trivyVersion)_Linux-64bit.deb
+      trivy -v
+    displayName: 'Download and install Trivy'
+
+  - task: Bash@3
+    continueOnError: false
+    displayName: "Download Corretto and prepare variables"
+    inputs:
+      targetType: 'inline'
+      script: |
+        JAVA_DIR="$(dirname $(dockerfilePath))/java_dir"
+        mkdir -p ${JAVA_DIR}
+        curl -Ls\
+          https://corretto.aws/downloads/latest/amazon-corretto-$(correttoVersionMajor)-x64-linux-jdk.tar.gz\
+          | tar -xz -C ${JAVA_DIR} --strip-components=1
+        rm -f ${JAVA_DIR}/javafx-src.zip
+        rm -f ${JAVA_DIR}/src.zip
+        CORRETTO_VERSION="$(cat dockerfiles/java_dir/version.txt)"
+        DATE="$(date +%Y%m%d)"
+        BASE_IMAGE_NAME="$(baseImageFlavor)-debian$(baseImageDebianVersion)"
+        IMAGE_NAME="distroless-$(baseImageFlavor)-debian$(baseImageDebianVersion)-corretto$(correttoVersionMajor)"
+        IMAGE_TAG="${CORRETTO_VERSION}-${DATE}-$(Build.BuildId)"
+        DOCKER_FILE_PATH="dockerfiles/distroless-deb11-corretto"
+        echo "##vso[build.updatebuildnumber]${IMAGE_TAG}"
+        echo "##vso[task.setvariable variable=correttoVersionFull]${CORRETTO_VERSION}"
+        echo "##vso[task.setvariable variable=baseImageName]${BASE_IMAGE_NAME}"
+        echo "##vso[task.setvariable variable=imageName]${IMAGE_NAME}"
+        echo "##vso[task.setvariable variable=imageTag]${IMAGE_TAG}"
+        echo "##vso[task.setvariable variable=dockerfilePath]${DOCKER_FILE_PATH}"
+
+  - task: Docker@2
+    continueOnError: false
+    displayName: "Build Docker image"
+    inputs:
+      command: build
+      containerRegistry: CLorg-Sub1-ACR
+      repository: $(imageName)
+      addPipelineData: true
+      Dockerfile: $(dockerfilePath)
+      tags: |
+        $(imageTag)
+        latest
+      arguments: |
+        --build-arg baseImageName=$(baseImageName)
+        --build-arg correttoVersion=$(correttoVersionFull)
+        --build-arg imageName=$(imageName)
+        --build-arg imageTag=$(imageTag)
+  
+  - task: Docker@2
+    displayName: "Pushing image to ACR $(acrName)"
+    inputs:
+      containerRegistry: "CLorg-Sub1-ACR"
+      repository: $(imageName)
+      tags: |
+        $(imageTag)
+        latest
+      command: push
+
+  - task: Docker@2
+    displayName: "Docker ACR login"
+    inputs:
+      containerRegistry: 'CLorg-Sub1-ACR'
+      command: 'login'
+
+  - task: CmdLine@2
+    displayName: "Run trivy scan"
+    inputs:
+      script: |
+        # trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag)
+        # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
+        ls -lha       
+        echo CRITICAL SCAN START
+        trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
+        echo NON-CRITICAL SCAN START
+        trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)
+        # trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
+        # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
+        ls -lha
+        echo SCAN FINISHED
+
+ 
+
+  - task: PublishTestResults@2
+    displayName: "Publish critical scan result"
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/junit-report-high-crit.xml'
+      mergeTestResults: true
+      failTaskOnFailedTests: false
+      testRunTitle: 'Trivy - High and Critical Vulnerabilities'
+    condition: 'always()'  
+
+  - task: PublishTestResults@2
+    displayName: "Publish non-critical scan result"
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/junit-report-low-med.xml'
+      mergeTestResults: true
+      failTaskOnFailedTests: false
+      testRunTitle: 'Trivy - Low and Medium Vulnerabilities'
+    condition: 'always()'  
+ 
+  # - task: CopyFiles@2
+  #   inputs:
+  #     contents: '_buildOutput/**'
+  #     targetFolder: $(Build.ArtifactStagingDirectory)
+
+  # - task: PublishBuildArtifacts@1
+  #   inputs:
+  #     pathToPublish: $(Build.ArtifactStagingDirectory)
+  #     artifactName: ScanReports

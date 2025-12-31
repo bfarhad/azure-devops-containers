@@ -1,0 +1,63 @@
+---
+
+variables:
+  repositoryName: "distroless-deb11-corretto"
+  tagName: "A-0.1"
+  dockerfilePath: dockerfiles/$(repositoryName)
+
+jobs:
+- job:
+  displayName: "Wildfly Corretto 21 image creation and uploading to the ACR"
+  timeoutInMinutes: 60
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+    - task: Docker@2
+      displayName: "Building image."
+      inputs:
+        containerRegistry: "CLorg-Sub1-ACR"
+        repository: $(repositoryName)
+        tags: $(tagName)
+        command: build
+        Dockerfile: $(dockerfilePath)
+
+    - task: Docker@2
+      displayName: "Pushing image to the ACR"
+      inputs:
+        containerRegistry: "CLorg-Sub1-ACR"
+        repository: $(repositoryName)
+        tags: $(tagName)
+        command: push
+
+    - task: Docker@2
+      displayName: "Docker ACR login"
+      inputs:
+        containerRegistry: 'CLorg-Sub1-ACR'
+        command: 'login'
+
+    - task: CmdLine@2
+      displayName: "Run trivy scan"
+      inputs:
+        script: |
+          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag)
+          trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
+
+          echo SCAN FINISHED
+
+    - task: CmdLine@2
+      displayName: "Run trivy scan"
+      inputs:
+        script: |
+          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
+          trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
+          ls -la $(Build.ArtifactStagingDirectory)/_buildOutput/
+
+    - task: CopyFiles@2
+      inputs:
+        contents: '_buildOutput/**'
+        targetFolder: $(Build.ArtifactStagingDirectory)
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: $(Build.ArtifactStagingDirectory)
+        artifactName: ScanReports

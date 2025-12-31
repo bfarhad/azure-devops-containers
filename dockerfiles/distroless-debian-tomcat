@@ -1,0 +1,60 @@
+FROM debian AS env_box
+
+ARG TOMCAT_V_VERSION
+ARG TOMCAT_VERSION
+
+ENV CATALINA_BASE="/opt/apache-tomcat-10"
+ENV JAVA_HOME="/opt/java"
+
+COPY --from=java_src $JAVA_HOME $JAVA_HOME
+
+RUN apt-get update; \
+  apt-get -y install curl tar dpkg-dev gcc libapr1-dev libssl-dev make \
+  && TOMCAT_TMP_DIR=$(mktemp -d) \
+  && curl -Ls \
+    https://dlcdn.apache.org/tomcat/tomcat-10/${TOMCAT_V_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz \
+    | tar -xz -C $TOMCAT_TMP_DIR --strip-components=1 \
+  && cp -r $TOMCAT_TMP_DIR/ $CATALINA_BASE \
+  && NATIVE_BUILD_DIR=$(mktemp -d) \
+  && tar -xf $TOMCAT_TMP_DIR/bin/tomcat-native.tar.gz -C $NATIVE_BUILD_DIR --strip-components=1 \
+  && cd $NATIVE_BUILD_DIR/native \
+  && gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)" \
+  && aprConfig="$(command -v apr-1-config)" \
+  && ./configure \
+    LDFLAGS="-static" \
+    --build="$gnuArch" \
+    --libdir="${CATALINA_BASE}/native_lib" \
+    --prefix="/opt/apache-tomcat-10" \
+    --with-apr="$aprConfig" \
+    --with-java-home="$JAVA_HOME" \
+    --with-ssl=yes \
+  && make -j "$(nproc)" \
+  && make install
+
+FROM distroless-debian-corretta:temp
+
+LABEL "Base"="google distroless on debian 10" \
+  "release"="dev" \
+  "owner"="Vi"
+
+ENV CATALINA_BASE=/opt/apache-tomcat-10
+ENV CATALINA_HOME=$CATALINA_BASE
+ENV CLASSPATH=$CATALINA_BASE/bin/bootstrap.jar:$CATALINA_BASE/bin/tomcat-juli.jar
+ENV PATH=$PATH:$CATALINA_BASE/bin
+ENV LD_LIBRARY_PATH $LD_LIBRARY_PATH:/opt/apache-tomcat-10/native_lib
+ENV _JAVA_OPTIONS="\
+$CATALINA_OPTS \
+$JAVA_OPTS \
+-Djava.util.logging.config.file=$CATALINA_BASE/conf/logging.properties \
+-Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager \
+-Dcatalina.base=$CATALINA_BASE \
+-Dcatalina.home=$CATALINA_HOME \
+"
+
+COPY --from=env_box --chown=nonroot $CATALINA_BASE $CATALINA_BASE
+
+WORKDIR $CATALINA_BASE
+USER nonroot
+EXPOSE 8080
+
+CMD ["java", "org.apache.catalina.startup.Bootstrap"]

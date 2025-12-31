@@ -1,0 +1,78 @@
+FROM alpine:latest AS builder
+
+# Install dependencies
+RUN apk add --no-cache \
+    curl \
+    wget \
+    gnupg \
+    unzip \
+    tar \
+    git \
+    build-base \
+    python3 \
+    py3-pip \
+    && python3 -m ensurepip
+
+# Install Azure CLI
+RUN apk add --no-cache gcc musl-dev python3-dev libffi-dev openssl-dev \
+    && pip3 install azure-cli \
+    && apk del gcc musl-dev python3-dev libffi-dev openssl-dev
+
+# Install Terraform
+RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/latest/terraform_linux_amd64.zip \
+    && unzip terraform.zip \
+    && mv terraform /usr/local/bin/ \
+    && rm terraform.zip
+
+# Install PowerShell Core
+RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/latest/download/powershell-linux-alpine-x64.tar.gz \
+    && mkdir -p /opt/microsoft/powershell \
+    && tar -xzf powershell.tar.gz -C /opt/microsoft/powershell \
+    && ln -s /opt/microsoft/powershell/pwsh /usr/bin/pwsh \
+    && rm powershell.tar.gz
+
+# Install Node.js LTS
+RUN apk add --no-cache nodejs npm
+
+# Install .NET SDK
+RUN wget -O dotnet.tar.gz https://download.visualstudio.microsoft.com/download/pr/8e2c4b8e-9c6c-4b2e-9b3e-5c3e5f4e6c7d/dotnet-sdk-8.0.100-linux-musl-x64.tar.gz \
+    && mkdir -p /usr/share/dotnet \
+    && tar -xzf dotnet.tar.gz -C /usr/share/dotnet \
+    && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet \
+    && rm dotnet.tar.gz
+
+# Install additional tools
+RUN apk add --no-cache jq
+
+FROM alpine:latest
+
+# Copy installed tools from builder
+COPY --from=builder /usr/bin/python3 /usr/bin/python3
+COPY --from=builder /usr/bin/pip3 /usr/bin/pip3
+COPY --from=builder /usr/local/bin/terraform /usr/local/bin/terraform
+COPY --from=builder /usr/bin/pwsh /usr/bin/pwsh
+COPY --from=builder /usr/bin/node /usr/bin/node
+COPY --from=builder /usr/bin/npm /usr/bin/npm
+COPY --from=builder /usr/bin/dotnet /usr/bin/dotnet
+COPY --from=builder /usr/bin/jq /usr/bin/jq
+COPY --from=builder /usr/bin/git /usr/bin/git
+COPY --from=builder /usr/bin/curl /usr/bin/curl
+COPY --from=builder /usr/local/bin/az /usr/local/bin/az
+
+# Copy libraries
+COPY --from=builder /lib /lib
+COPY --from=builder /usr/lib /usr/lib
+COPY --from=builder /usr/local/lib /usr/local/lib
+COPY --from=builder /usr/share/dotnet /usr/share/dotnet
+COPY --from=builder /opt/microsoft/powershell /opt/microsoft/powershell
+
+# Set environment variables
+ENV PATH="/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/sbin:/bin:/opt/microsoft/powershell"
+ENV PYTHONPATH="/usr/lib/python3.12"
+ENV DOTNET_ROOT="/usr/share/dotnet"
+
+# Create working directory
+WORKDIR /azp
+
+# Default command
+CMD ["/bin/sh"]
