@@ -15,7 +15,7 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  acrName: 'cldemosub1acr'
+  acrName: 'cloudladderacr'
   acrLoginServer: 'cloudladderacr.azurecr.io'
   imageName: 'distroless-devops-agent'
   tag: 'latest'
