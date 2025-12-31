@@ -63,7 +63,7 @@ jobs:
     displayName: "Build Docker image"
     inputs:
       command: build
-      containerRegistry: CLorg-Sub1-ACR
+      containerRegistry: cl-demo-sub1acr
       repository: $(imageName)
       addPipelineData: true
       Dockerfile: $(dockerfilePath)
@@ -74,7 +74,7 @@ jobs:
   - task: Docker@2
     displayName: "Pushing image to ACR $(acrName)"
     inputs:
-      containerRegistry: "CLorg-Sub1-ACR"
+      containerRegistry: "cl-demo-sub1acr"
       repository: $(imageName)
       tags: |
         $(imageTag)
