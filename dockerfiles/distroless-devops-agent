@@ -13,7 +13,7 @@ RUN apk add --no-cache \
     py3-pip
 
 # Install Azure CLI
-RUN apk add --no-cache azure-cli
+RUN pip3 install azure-cli --break-system-packages
 
 # Install Terraform
 RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/latest/terraform_linux_amd64.zip \
