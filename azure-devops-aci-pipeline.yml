@@ -2,12 +2,21 @@ trigger:
   - main
   - develop
 
+parameters:
+  - name: action
+    displayName: 'Action'
+    type: string
+    default: 'deploy'
+    values:
+      - deploy
+      - destroy
+
 pool:
   vmImage: 'ubuntu-latest'
 
 variables:
   acrName: 'cldemosub1acr'
-  acrLoginServer: 'cldemosub1acr.azurecr.io'
+  acrLoginServer: 'cloudladderacr.azurecr.io'
   imageName: 'distroless-devops-agent'
   tag: 'latest'
   resourceGroup: 'global-management-RG'
@@ -18,10 +27,12 @@ variables:
 
 stages:
 - stage: DeployACI
+  condition: eq('${{ parameters.action }}', 'deploy')
   jobs:
   - job: Deploy
     steps:
     - task: AzureCLI@2
+      displayName: 'Get storage account key'
       inputs:
         azureSubscription: 'CL-demo-sub1(648f668b-eaab-4a61-914a-190c7a924419)'
         scriptType: 'bash'
@@ -32,6 +43,7 @@ stages:
           echo "##vso[task.setvariable variable=storageAccountKey]$storageAccountKey"
 
     - task: AzureCLI@2
+      displayName: 'Deploy Azure Container Instance with DevOps Agent'
       inputs:
         azureSubscription: 'CL-demo-sub1(648f668b-eaab-4a61-914a-190c7a924419)'
         scriptType: 'bash'
@@ -60,6 +72,7 @@ stages:
 
 - stage: Test
   dependsOn: DeployACI
+  condition: eq('${{ parameters.action }}', 'deploy')
   jobs:
   - job: TestAzCli
     pool:
@@ -68,3 +81,21 @@ stages:
     - script: |
         az version
       displayName: 'Test Azure CLI Version'
+
+- stage: DestroyACI
+  condition: eq('${{ parameters.action }}', 'destroy')
+  jobs:
+  - job: Destroy
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Destroy Azure Container Instance'
+      inputs:
+        azureSubscription: 'CL-demo-sub1(648f668b-eaab-4a61-914a-190c7a924419)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          # Delete the ACI instance (the agent will be detached automatically when the container is stopped)
+          az container delete \
+            --resource-group $(resourceGroup) \
+            --name $(containerGroupName) \
+            --yes
