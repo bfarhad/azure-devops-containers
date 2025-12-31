@@ -22,7 +22,7 @@ RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.0/terrafo
     && rm terraform.zip
 
 # Install PowerShell Core
-RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/latest/download/powershell-linux-alpine-x64.tar.gz \
+RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/powershell-7.4.0-linux-alpine-x64.tar.gz \
     && mkdir -p /opt/microsoft/powershell \
     && tar -xzf powershell.tar.gz -C /opt/microsoft/powershell \
     && ln -s /opt/microsoft/powershell/pwsh /usr/bin/pwsh \
