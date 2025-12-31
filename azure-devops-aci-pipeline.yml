@@ -15,8 +15,9 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  acrName: 'cloudladderacr'
-  acrLoginServer: 'cloudladderacr.azurecr.io'
+  # NOTE: ACR *name* must be alphanumeric only (no dashes). Login server is <name>.azurecr.io.
+  acrName: 'cldemosub1acr'
+  acrLoginServer: 'cldemosub1acr.azurecr.io'
   imageName: 'distroless-devops-agent'
   tag: 'latest'
   resourceGroup: 'global-management-RG'
@@ -49,26 +50,28 @@ stages:
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
+          set -euo pipefail
+
           # Get ACR credentials
           acrUsername=$(az acr credential show --name $(acrName) --query username -o tsv)
           acrPassword=$(az acr credential show --name $(acrName) --query passwords[0].value -o tsv)
 
+          echo "Deploying ACI: rg=$(resourceGroup) name=$(containerGroupName) image=$(acrLoginServer)/$(imageName):$(tag)"
+
           # Create ACI with Azure File Share mount and run the agent
-          az container create \
-            --resource-group $(resourceGroup) \
-            --name $(containerGroupName) \
+          # No inbound ports are required for Azure Pipelines self-hosted agents.
+          az container create --resource-group $(resourceGroup) --name $(containerGroupName) \
             --image $(acrLoginServer)/$(imageName):$(tag) \
-            --registry-username $acrUsername \
-            --registry-password $acrPassword \
-            --cpu 1 \
-            --memory 1.5 \
+            --registry-username "$acrUsername" --registry-password "$acrPassword" \
+            --os-type Linux \
+            --ip-address None \
+            --cpu 1 --memory 1.5 \
             --restart-policy Always \
             --azure-file-volume-account-name $(storageAccountName) \
-            --azure-file-volume-account-key $(storageAccountKey) \
+            --azure-file-volume-account-key "$(storageAccountKey)" \
             --azure-file-volume-share-name $(fileShareName) \
             --azure-file-volume-mount-path /azp/_work \
-            --environment-variables AZP_URL='$(System.CollectionUri)' AZP_TOKEN='$(System.AccessToken)' AZP_AGENT_NAME='aci-agent' AZP_POOL='$(agentPoolName)' \
-            --ports 80
+            --environment-variables AZP_URL='$(System.CollectionUri)' AZP_TOKEN='$(System.AccessToken)' AZP_AGENT_NAME='aci-agent' AZP_POOL='$(agentPoolName)'
 
           # For autoscaling, you can set up Azure Monitor autoscale rules based on CPU or custom metrics.
           # Example: az monitor autoscale create --resource /subscriptions/... --name autoscale --target /subscriptions/.../containerGroups/$(containerGroupName) --min-count 1 --max-count 5 --count 1

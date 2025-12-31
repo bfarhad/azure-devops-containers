@@ -44,7 +44,7 @@ RUN apk add --no-cache jq
 
 # Download Azure DevOps agent
 RUN mkdir -p /azp/agent && \
-    curl -LsS https://vstsagentpackage.azureedge.net/agent/3.220.5/vsts-agent-linux-x64-3.220.5.tar.gz | tar -xz -C /azp/agent
+    curl -LsS https://vstsagentpackage.azureedge.net/agent/3.236.1/vsts-agent-linux-x64-3.236.1.tar.gz | tar -xz -C /azp/agent
 
 FROM alpine:latest
 
