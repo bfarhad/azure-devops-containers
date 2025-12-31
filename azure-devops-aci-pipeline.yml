@@ -22,13 +22,13 @@ stages:
     steps:
     - task: AzureCLI@2
       inputs:
-        azureSubscription: 'your-service-connection'
+        azureSubscription: 'CLorg-stdperm-SP'
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
           # Login to ACR
           az acr login --name $(acrName)
-
+          
           # Create ACI with Azure File Share mount and run the agent
           az container create \
             --resource-group $(resourceGroup) \
@@ -43,7 +43,7 @@ stages:
             --azure-file-volume-mount-path /azp/_work \
             --environment-variables AZP_URL='$(System.CollectionUri)' AZP_TOKEN='$(System.AccessToken)' AZP_AGENT_NAME='aci-agent' AZP_POOL='$(agentPoolName)' \
             --ports 80
-
+          
           # For autoscaling, you can set up Azure Monitor autoscale rules based on CPU or custom metrics.
           # Example: az monitor autoscale create --resource /subscriptions/... --name autoscale --target /subscriptions/.../containerGroups/$(containerGroupName) --min-count 1 --max-count 5 --count 1
 
