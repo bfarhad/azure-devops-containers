@@ -14,7 +14,7 @@ RUN apk add --no-cache \
 
 
 # Install Terraform
-RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip \
+RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip \
     && unzip terraform.zip \
     && mv terraform /usr/local/bin/ \
     && rm terraform.zip
@@ -33,11 +33,11 @@ RUN apk add --no-cache nodejs npm
 RUN apk add --no-cache bash
 
 # Install .NET SDK
-RUN /bin/bash -c "wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
+RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
     && chmod +x dotnet-install.sh \
-    && ./dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet \
+    && /bin/bash ./dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet \
     && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet \
-    && rm dotnet-install.sh"
+    && rm dotnet-install.sh
 
 # Install additional tools
 RUN apk add --no-cache jq

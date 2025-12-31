@@ -3,6 +3,7 @@ FROM debian AS env_box
 ARG TOMCAT_V_VERSION
 ARG TOMCAT_VERSION
 
+ENV DEBIAN_FRONTEND=noninteractive
 ENV CATALINA_BASE="/opt/apache-tomcat-10"
 ENV JAVA_HOME="/java"
 
@@ -18,7 +19,7 @@ RUN apt-get update; \
   apt-get -y install curl tar \
   && TOMCAT_TMP_DIR=$(mktemp -d) \
   && curl -Ls \
-    https://downloads.apache.org/tomcat/tomcat-10/v10.1.24/bin/apache-tomcat-10.1.24.tar.gz \
+    https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.24/bin/apache-tomcat-10.1.24.tar.gz \
     | tar -xz -C $TOMCAT_TMP_DIR --strip-components=1 \
   && cp -r $TOMCAT_TMP_DIR/ $CATALINA_BASE
 
@@ -33,15 +34,8 @@ ENV CATALINA_BASE=/opt/apache-tomcat-10
 ENV CATALINA_HOME=$CATALINA_BASE
 ENV CLASSPATH=$CATALINA_BASE/bin/bootstrap.jar:$CATALINA_BASE/bin/tomcat-juli.jar
 ENV PATH=$PATH:$CATALINA_BASE/bin:/java/bin
-ENV LD_LIBRARY_PATH $LD_LIBRARY_PATH:/opt/apache-tomcat-10/native_lib
-ENV _JAVA_OPTIONS="\
-$CATALINA_OPTS \
-$JAVA_OPTS \
--Djava.util.logging.config.file=$CATALINA_BASE/conf/logging.properties \
--Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager \
--Dcatalina.base=$CATALINA_BASE \
--Dcatalina.home=$CATALINA_HOME \
-"
+ENV LD_LIBRARY_PATH=/opt/apache-tomcat-10/native_lib
+ENV _JAVA_OPTIONS="-Djava.util.logging.config.file=$CATALINA_BASE/conf/logging.properties -Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager -Dcatalina.base=$CATALINA_BASE -Dcatalina.home=$CATALINA_HOME"
 
 COPY --from=env_box --chown=nonroot $CATALINA_BASE $CATALINA_BASE
 COPY --from=env_box $JAVA_HOME $JAVA_HOME
