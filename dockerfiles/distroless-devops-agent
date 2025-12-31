@@ -16,7 +16,7 @@ RUN apk add --no-cache \
 RUN pip3 install azure-cli --break-system-packages
 
 # Install Terraform
-RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/latest/terraform_linux_amd64.zip \
+RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip \
     && unzip terraform.zip \
     && mv terraform /usr/local/bin/ \
     && rm terraform.zip
@@ -32,11 +32,11 @@ RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/
 RUN apk add --no-cache nodejs npm
 
 # Install .NET SDK
-RUN wget -O dotnet.tar.gz https://download.visualstudio.microsoft.com/download/pr/8e2c4b8e-9c6c-4b2e-9b3e-5c3e5f4e6c7d/dotnet-sdk-8.0.100-linux-musl-x64.tar.gz \
-    && mkdir -p /usr/share/dotnet \
-    && tar -xzf dotnet.tar.gz -C /usr/share/dotnet \
+RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
+    && chmod +x dotnet-install.sh \
+    && ./dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet \
     && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet \
-    && rm dotnet.tar.gz
+    && rm dotnet-install.sh
 
 # Install additional tools
 RUN apk add --no-cache jq
