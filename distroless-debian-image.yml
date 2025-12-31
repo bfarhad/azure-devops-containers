@@ -88,8 +88,8 @@ variables:
   - name: trivyVersion
     value: '0.50.1'
 
-pool: Azure Pipelines
-  #vmImage: ubuntu-latest
+pool:
+  vmImage: ubuntu-latest
 
 jobs:
 - job:
@@ -158,16 +158,16 @@ jobs:
       script: |
         # trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag)
         # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
-        ls -lha       
+        ls -lha
         echo CRITICAL SCAN START
-        trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
-        trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
+         trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
+         trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
         echo NON-CRITICAL SCAN START
-        trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
-        trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)
+         trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
+         trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)
         # trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
         # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
-        ls -lha
+         ls -lha
         echo SCAN FINISHED
 
  
@@ -192,12 +192,12 @@ jobs:
       testRunTitle: 'Trivy - Low and Medium Vulnerabilities'
     condition: 'always()'  
  
-  # - task: CopyFiles@2
-  #   inputs:
-  #     contents: '_buildOutput/**'
-  #     targetFolder: $(Build.ArtifactStagingDirectory)
+  - task: CopyFiles@2
+    inputs:
+      contents: '_buildOutput/**'
+      targetFolder: $(Build.ArtifactStagingDirectory)
 
-  # - task: PublishBuildArtifacts@1
-  #   inputs:
-  #     pathToPublish: $(Build.ArtifactStagingDirectory)
-  #     artifactName: ScanReports
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: $(Build.ArtifactStagingDirectory)
+      artifactName: ScanReports

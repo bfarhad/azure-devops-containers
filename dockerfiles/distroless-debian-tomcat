@@ -19,7 +19,7 @@ RUN apt-get update; \
   apt-get -y install curl tar \
   && TOMCAT_TMP_DIR=$(mktemp -d) \
   && curl -Ls \
-    https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.24/bin/apache-tomcat-10.1.24.tar.gz \
+    https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.24/bin/apache-tomcat-10.1.24.tar.gz \
     | tar -xz -C $TOMCAT_TMP_DIR --strip-components=1 \
   && cp -r $TOMCAT_TMP_DIR/ $CATALINA_BASE
 

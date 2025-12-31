@@ -18,11 +18,12 @@ parameters:
   - name: correttoVersionMajor
     displayName: "Select Corretto major version:"
     type: number
-    default: 8
+    default: 21
     values:
     - 8
     - 11
     - 17
+    - 21
   - name: tomcatVersionMajor
     displayName: "Select Tomcat major version:"
     type: number
