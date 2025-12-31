@@ -8,7 +8,7 @@
 # Resulting image name is:
 # distroless-[static|base]-debian[10|11]-corretto[8|11|17|21]
 # Resulting tag name is:
-# $correttoVersion-$date-$buildI (e.g., 21.x.x-20231231-123456)
+# latest-$date-$buildIdClean (e.g., latest-20251231-20251231123456)
 #
 # Google's distroless image versioning:
 # - Major Debian's version is set by "baseImageDebianVersion" variable
@@ -19,7 +19,11 @@
 # - Always latest minor version is downloaded
 
 trigger:
-- master
+  branches:
+    include:
+    - main
+    - master
+    - develop
 
 parameters:
   # Debian release version
@@ -104,25 +108,18 @@ jobs:
 
   - task: Bash@3
     continueOnError: false
-    displayName: "Download Corretto and prepare variables"
+    displayName: "Prepare variables"
     inputs:
       targetType: 'inline'
       script: |
-        JAVA_DIR="$(dirname $(dockerfilePath))/java_dir"
-        mkdir -p ${JAVA_DIR}
-        curl -Ls\
-          https://corretto.aws/downloads/latest/amazon-corretto-$(correttoVersionMajor)-x64-linux-jdk.tar.gz\
-          | tar -xz -C ${JAVA_DIR} --strip-components=1
-        rm -f ${JAVA_DIR}/javafx-src.zip
-        rm -f ${JAVA_DIR}/src.zip
-        CORRETTO_VERSION="$(cat dockerfiles/java_dir/version.txt)"
         DATE="$(date +%Y%m%d)"
+        BUILD_ID_CLEAN=$(echo $BUILD_BUILDID | sed 's/-//g')
         BASE_IMAGE_NAME="$(baseImageFlavor)-debian$(baseImageDebianVersion)"
         IMAGE_NAME="distroless-$(baseImageFlavor)-debian$(baseImageDebianVersion)-corretto$(correttoVersionMajor)"
-        IMAGE_TAG="${CORRETTO_VERSION}-${DATE}-$(Build.BuildId)"
+        IMAGE_TAG="latest-${DATE}-${BUILD_ID_CLEAN}"
         DOCKER_FILE_PATH="dockerfiles/distroless-deb11-corretto"
         echo "##vso[build.updatebuildnumber]${IMAGE_TAG}"
-        echo "##vso[task.setvariable variable=correttoVersionFull]${CORRETTO_VERSION}"
+        echo "##vso[task.setvariable variable=correttoVersionFull]latest"
         echo "##vso[task.setvariable variable=baseImageName]${BASE_IMAGE_NAME}"
         echo "##vso[task.setvariable variable=imageName]${IMAGE_NAME}"
         echo "##vso[task.setvariable variable=imageTag]${IMAGE_TAG}"

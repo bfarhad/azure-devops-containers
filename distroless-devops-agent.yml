@@ -4,10 +4,14 @@
 # including Terraform, Azure CLI, PowerShell Core, Python 3.12, Node.js, and .NET
 #
 # Resulting image name: distroless-devops-agent
-# Resulting tag name: latest-$date-$buildId
+# Resulting tag name: latest-$date-$buildIdClean
 
 trigger:
-- master
+  branches:
+    include:
+    - main
+    - master
+    - develop
 
 variables:
   # ACR where to push new image
@@ -49,7 +53,8 @@ jobs:
       targetType: 'inline'
       script: |
         DATE="$(date +%Y%m%d)"
-        IMAGE_TAG="latest-${DATE}-$(Build.BuildId)"
+        BUILD_ID_CLEAN=$(echo $BUILD_BUILDID | sed 's/-//g')
+        IMAGE_TAG="latest-${DATE}-${BUILD_ID_CLEAN}"
         echo "##vso[build.updatebuildnumber]${IMAGE_TAG}"
         echo "##vso[task.setvariable variable=imageTag]${IMAGE_TAG}"
 

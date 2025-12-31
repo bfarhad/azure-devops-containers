@@ -1,4 +1,9 @@
-trigger: none
+trigger:
+  branches:
+    include:
+    - main
+    - master
+    - develop
 
 parameters:
   - name: baseImageNameShort
