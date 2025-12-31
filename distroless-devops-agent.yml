@@ -27,7 +27,7 @@ variables:
   - name: dockerfilePath
     value: "dockerfiles/distroless-devops-agent"
   - name: trivyVersion
-    value: '0.36.1'
+    value: '0.50.1'
 
 pool: Azure Pipelines
   #vmImage: ubuntu-latest
@@ -40,9 +40,9 @@ jobs:
   - checkout: self
 
   - script: |
-      sudo apt-get install rpm
-      wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.deb
-      sudo dpkg -i trivy_$(trivyVersion)_Linux-64bit.deb
+      wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.tar.gz
+      tar -xzf trivy_$(trivyVersion)_Linux-64bit.tar.gz
+      sudo mv trivy /usr/local/bin/
       trivy -v
     displayName: 'Download and install Trivy'
 

@@ -13,7 +13,7 @@ RUN apk add --no-cache \
     py3-pip
 
 # Install Azure CLI
-RUN apk add --no-cache azure-cli
+RUN apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community azure-cli
 
 # Install Terraform
 RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip \
