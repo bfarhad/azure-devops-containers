@@ -36,12 +36,6 @@ jobs:
         tags: $(tagName)
         command: push
 
-    - task: Docker@2
-      displayName: "Docker ACR login"
-      inputs:
-        containerRegistry: 'CLorg-Sub1-ACR'
-        command: 'login'
-
     - task: CmdLine@2
       displayName: "Run trivy scan"
       inputs:
