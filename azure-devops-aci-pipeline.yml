@@ -17,7 +17,7 @@ pool:
 variables:
   # NOTE: ACR *name* must be alphanumeric only (no dashes). Login server is <name>.azurecr.io.
   acrName: 'cldemosub1acr'
-  acrLoginServer: 'cldemosub1acr.azurecr.io'
+  acrLoginServer: 'cloudladderacr.azurecr.io'
   imageName: 'distroless-devops-agent'
   tag: 'latest'
   resourceGroup: 'global-management-RG'
