@@ -6,7 +6,13 @@ ARG TOMCAT_VERSION
 ENV CATALINA_BASE="/opt/apache-tomcat-10"
 ENV JAVA_HOME="/opt/java"
 
-COPY --from=java_src $JAVA_HOME $JAVA_HOME
+RUN apt-get -q update; \
+  apt-get -q install -y curl tar \
+  && TMP_DIR=$(mktemp -d) \
+  && curl -Ls \
+    https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz \
+    | tar -xz -C $TMP_DIR --strip-components=1 \
+  && mv $TMP_DIR /opt/java
 
 RUN apt-get update; \
   apt-get -y install curl tar dpkg-dev gcc libapr1-dev libssl-dev make \
@@ -52,6 +58,7 @@ $JAVA_OPTS \
 "
 
 COPY --from=env_box --chown=nonroot $CATALINA_BASE $CATALINA_BASE
+COPY --from=env_box $JAVA_HOME $JAVA_HOME
 
 WORKDIR $CATALINA_BASE
 USER nonroot

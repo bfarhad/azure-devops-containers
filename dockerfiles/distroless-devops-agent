@@ -13,7 +13,7 @@ RUN apk add --no-cache \
     py3-pip
 
 # Install Azure CLI
-RUN apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community azure-cli
+RUN pip3 install azure-cli --break-system-packages
 
 # Install Terraform
 RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip \
@@ -57,7 +57,7 @@ COPY --from=builder /usr/bin/dotnet /usr/bin/dotnet
 COPY --from=builder /usr/bin/jq /usr/bin/jq
 COPY --from=builder /usr/bin/git /usr/bin/git
 COPY --from=builder /usr/bin/curl /usr/bin/curl
-COPY --from=builder /usr/bin/az /usr/bin/az
+COPY --from=builder /usr/local/bin/az /usr/local/bin/az
 
 # Copy libraries
 COPY --from=builder /lib /lib
