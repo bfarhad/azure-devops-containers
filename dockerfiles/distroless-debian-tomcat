@@ -31,7 +31,7 @@ RUN apt-get update; \
   && make -j "$(nproc)" \
   && make install
 
-FROM gcr.io/distroless/base:ubuntu2404
+FROM gcr.io/distroless/base:latest
 
 LABEL "Base"="google distroless on debian 10" \
   "release"="dev" \
