@@ -31,6 +31,9 @@ RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/
 # Install Node.js LTS
 RUN apk add --no-cache nodejs npm
 
+# Install bash for .NET SDK installation
+RUN apk add --no-cache bash
+
 # Install .NET SDK
 RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
     && chmod +x dotnet-install.sh \
