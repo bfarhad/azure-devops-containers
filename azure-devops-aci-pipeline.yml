@@ -9,23 +9,51 @@ variables:
   acrLoginServer: 'cloudladderacr.azurecr.io'
   imageName: 'distroless-devops-agent'
   tag: 'latest'
-
-resources:
-  containers:
-  - container: devopsAgent
-    image: $(acrLoginServer)/$(imageName):$(tag)
-    endpoint: your-acr-service-connection
+  resourceGroup: 'global-management-RG'
+  containerGroupName: 'devops-agent-aci'
+  agentPoolName: 'aci-agent-pool'
+  storageAccountName: 'centralwelogstorage'
+  fileShareName: 'agent-files'
 
 stages:
+- stage: DeployACI
+  jobs:
+  - job: Deploy
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'your-service-connection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          # Login to ACR
+          az acr login --name $(acrName)
+
+          # Create ACI with Azure File Share mount and run the agent
+          az container create \
+            --resource-group $(resourceGroup) \
+            --name $(containerGroupName) \
+            --image $(acrLoginServer)/$(imageName):$(tag) \
+            --cpu 1 \
+            --memory 1.5 \
+            --restart-policy Always \
+            --azure-file-volume-account-name $(storageAccountName) \
+            --azure-file-volume-account-key $(storageAccountKey) \
+            --azure-file-volume-share-name $(fileShareName) \
+            --azure-file-volume-mount-path /azp/_work \
+            --environment-variables AZP_URL='$(System.CollectionUri)' AZP_TOKEN='$(System.AccessToken)' AZP_AGENT_NAME='aci-agent' AZP_POOL='$(agentPoolName)' \
+            --ports 80
+
+          # For autoscaling, you can set up Azure Monitor autoscale rules based on CPU or custom metrics.
+          # Example: az monitor autoscale create --resource /subscriptions/... --name autoscale --target /subscriptions/.../containerGroups/$(containerGroupName) --min-count 1 --max-count 5 --count 1
+
 - stage: Test
+  dependsOn: DeployACI
   jobs:
   - job: TestAzCli
-    container: devopsAgent
+    pool:
+      name: $(agentPoolName)
     steps:
     - script: |
         az version
       displayName: 'Test Azure CLI Version'
-
-# Note: For autoscaling with ACI, consider using Azure Container Apps.
-# This pipeline uses container jobs in Azure Pipelines, which run the container for each job.
-# Autoscaling can be achieved by running multiple jobs or using Azure Container Apps for the agent.

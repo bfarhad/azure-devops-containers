@@ -42,6 +42,10 @@ RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
 # Install additional tools
 RUN apk add --no-cache jq
 
+# Download Azure DevOps agent
+RUN mkdir -p /azp/agent && \
+    curl -LsS https://vstsagentpackage.azureedge.net/agent/3.220.5/vsts-agent-linux-x64-3.220.5.tar.gz | tar -xz -C /azp/agent
+
 FROM alpine:latest
 
 # Copy installed tools from builder
@@ -63,6 +67,9 @@ COPY --from=builder /usr/local/lib /usr/local/lib
 COPY --from=builder /usr/share/dotnet /usr/share/dotnet
 COPY --from=builder /opt/microsoft/powershell /opt/microsoft/powershell
 
+# Copy Azure DevOps agent
+COPY --from=builder /azp/agent /azp/agent
+
 # Set environment variables
 ENV PATH="/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/sbin:/bin:/opt/microsoft/powershell"
 ENV PYTHONPATH="/usr/lib/python3.12"
@@ -71,5 +78,5 @@ ENV DOTNET_ROOT="/usr/share/dotnet"
 # Create working directory
 WORKDIR /azp
 
-# Default command
-CMD ["/bin/sh"]
+# Default command to run the agent
+CMD ["/azp/agent/run.sh"]
