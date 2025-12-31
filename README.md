@@ -52,9 +52,9 @@ All Docker images and pipelines have been updated to use the latest stable versi
 
 ## Cross-Repository Updates
 Similar changes were applied to related repositories:
-- `3-mySub-p0c/clorg-distroless-buid/`
-- `4-CLO-azuredevops/AzureDevOps/distroless-build/`
-- `code/arca (2)/`
+- `clorg-distroless-buid/`
+- `AzureDevOps/distroless-build/`
+- `arca/`
 
 ## DevOps Agent Container
 
@@ -62,7 +62,7 @@ Similar changes were applied to related repositories:
 A specialized Alpine Linux container designed for Azure DevOps pipeline agents, containing essential DevOps and development tools.
 
 ### Included Tools
-- **Terraform**: Latest stable version for infrastructure as code
+- **Terraform 1.9.8**: Latest stable version for infrastructure as code (updated for CVE-2024-45337 fix)
 - **Azure CLI**: Latest version for Azure resource management
 - **PowerShell Core**: Latest version for cross-platform scripting
 - **Python 3.12**: Latest stable Python with pip
@@ -79,6 +79,26 @@ A specialized Alpine Linux container designed for Azure DevOps pipeline agents, 
 ### Usage
 This container can be used as a base image for Azure DevOps self-hosted agents or as a tool container in pipelines requiring multiple development tools.
 
+## Latest Security Updates (2025-12-31)
+
+### CVE-2024-45337 Fix
+- **Issue**: Authorization bypass vulnerability in golang.org/x/crypto/ssh
+- **Fix**: Updated Terraform from 1.9.0 to 1.9.8, which includes patched crypto libraries
+- **Impact**: Resolves critical security vulnerability in SSH authentication
+
+### Tomcat Dockerfile Fixes
+- **Issue**: Build failures due to undefined variables and incorrect download URLs
+- **Fixes**:
+  - Changed Tomcat download URL to `https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.24/bin/apache-tomcat-10.1.24.tar.gz`
+  - Corrected `LD_LIBRARY_PATH` ENV syntax to use `key=value` format
+  - Removed undefined `$CATALINA_OPTS` and `$JAVA_OPTS` variables from `_JAVA_OPTIONS`
+- **Impact**: Tomcat container now builds successfully
+
+### Pipeline Alignment
+- **Issue**: Inconsistent Trivy scanning configurations between pipelines
+- **Fix**: Standardized Trivy scan scripts, pool configurations, and artifact publishing
+- **Impact**: Consistent security reporting across all container builds
+
 ## Compatibility Notes
 - All changes maintain backward compatibility
 - Older versions remain selectable in pipeline parameters
@@ -86,21 +106,107 @@ This container can be used as a base image for Azure DevOps self-hosted agents o
 - No breaking changes to existing deployments
 
 # Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+## Prerequisites
+- Docker 20.10 or later
+- Git
+- (Optional) Azure CLI for container registry access
+
+## Manual Build Instructions
+
+### Building Tomcat Container
+
+1. Clone the repository and navigate to the dockerfiles directory:
+   ```bash
+   git clone <repository-url>
+   cd azure-devops-containers/dockerfiles
+   ```
+
+2. Build the Tomcat image:
+   ```bash
+   docker build -t distroless-debian-tomcat -f distroless-debian-tomcat .
+   ```
+
+3. Verify the build:
+   ```bash
+   docker images | grep distroless-debian-tomcat
+   ```
+
+4. Run the container (optional):
+   ```bash
+   docker run -p 8080:8080 distroless-debian-tomcat
+   ```
+
+### Building DevOps Agent Container
+
+1. Navigate to the dockerfiles directory:
+   ```bash
+   cd azure-devops-containers/dockerfiles
+   ```
+
+2. Build the devops agent image:
+   ```bash
+   docker build -t distroless-devops-agent -f distroless-devops-agent .
+   ```
+
+### Building Base Corretto Images
+
+For base Amazon Corretto images, use the respective Dockerfiles:
+
+```bash
+# Build Corretto 21 base image
+docker build -t distroless-base-debian11-corretto21 -f distroless-deb11-corretto .
+```
+
+## CI/CD Pipeline Usage
+
+The repository includes Azure DevOps pipelines for automated building:
+
+- `distroless-debian-image.yml`: Builds base Corretto images with security scanning
+- `distroless-debian-tomcat.yml`: Builds Tomcat images with security scanning
+
+Both pipelines include Trivy vulnerability scanning and publish results to Azure DevOps.
 
 # Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+
+## Local Testing
+
+### Running Containers Locally
+
+1. **Tomcat Container**:
+   ```bash
+   docker run -d -p 8080:8080 --name tomcat-test distroless-debian-tomcat
+   curl http://localhost:8080
+   ```
+
+2. **DevOps Agent Container**:
+   ```bash
+   docker run -it --rm distroless-devops-agent /bin/sh
+   # Inside container, test tools:
+   terraform --version
+   pwsh --version
+   dotnet --version
+   ```
+
+### Security Scanning
+
+Install Trivy locally and scan built images:
+
+```bash
+# Install Trivy
+wget https://github.com/aquasecurity/trivy/releases/download/v0.50.1/trivy_0.50.1_Linux-64bit.tar.gz
+tar -xzf trivy_0.50.1_Linux-64bit.tar.gz
+sudo mv trivy /usr/local/bin/
+
+# Scan image
+trivy image --format table --severity HIGH,CRITICAL distroless-debian-tomcat
+```
+
+## Pipeline Testing
+
+- Push changes to trigger Azure DevOps pipelines
+- Monitor build logs and security scan results
+- Review published test results for vulnerabilities
 
 # Contribute
 TODO: Explain how other users and developers can contribute to make your code better. 

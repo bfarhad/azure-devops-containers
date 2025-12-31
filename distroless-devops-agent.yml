@@ -4,10 +4,14 @@
 # including Terraform, Azure CLI, PowerShell Core, Python 3.12, Node.js, and .NET
 #
 # Resulting image name: distroless-devops-agent
-# Resulting tag name: latest-$date-$buildId
+# Resulting tag name: latest-$date-$buildIdClean
 
 trigger:
-- master
+  branches:
+    include:
+    - main
+    - master
+    - develop
 
 variables:
   # ACR where to push new image
@@ -23,7 +27,7 @@ variables:
   - name: dockerfilePath
     value: "dockerfiles/distroless-devops-agent"
   - name: trivyVersion
-    value: '0.36.1'
+    value: '0.50.1'
 
 pool: Azure Pipelines
   #vmImage: ubuntu-latest
@@ -36,9 +40,9 @@ jobs:
   - checkout: self
 
   - script: |
-      sudo apt-get install rpm
-      wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.deb
-      sudo dpkg -i trivy_$(trivyVersion)_Linux-64bit.deb
+      wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.tar.gz
+      tar -xzf trivy_$(trivyVersion)_Linux-64bit.tar.gz
+      sudo mv trivy /usr/local/bin/
       trivy -v
     displayName: 'Download and install Trivy'
 
@@ -49,7 +53,8 @@ jobs:
       targetType: 'inline'
       script: |
         DATE="$(date +%Y%m%d)"
-        IMAGE_TAG="latest-${DATE}-$(Build.BuildId)"
+        BUILD_ID_CLEAN=$(echo $BUILD_BUILDID | sed 's/-//g')
+        IMAGE_TAG="latest-${DATE}-${BUILD_ID_CLEAN}"
         echo "##vso[build.updatebuildnumber]${IMAGE_TAG}"
         echo "##vso[task.setvariable variable=imageTag]${IMAGE_TAG}"
 
@@ -58,7 +63,7 @@ jobs:
     displayName: "Build Docker image"
     inputs:
       command: build
-      containerRegistry: CLorg-Sub1-ACR
+      containerRegistry: cl-demo-sub1acr
       repository: $(imageName)
       addPipelineData: true
       Dockerfile: $(dockerfilePath)
@@ -69,18 +74,12 @@ jobs:
   - task: Docker@2
     displayName: "Pushing image to ACR $(acrName)"
     inputs:
-      containerRegistry: "CLorg-Sub1-ACR"
+      containerRegistry: "cl-demo-sub1acr"
       repository: $(imageName)
       tags: |
         $(imageTag)
         latest
       command: push
-
-  - task: Docker@2
-    displayName: "Docker ACR login"
-    inputs:
-      containerRegistry: 'CLorg-Sub1-ACR'
-      command: 'login'
 
   - task: CmdLine@2
     displayName: "Run trivy scan"
@@ -90,8 +89,10 @@ jobs:
         # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
         ls -lha
         echo CRITICAL SCAN START
+        trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
         trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
         echo NON-CRITICAL SCAN START
+        trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
         trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)
         ls -lha
         echo SCAN FINISHED
@@ -115,3 +116,13 @@ jobs:
       failTaskOnFailedTests: false
       testRunTitle: 'Trivy - Low and Medium Vulnerabilities'
     condition: 'always()'
+
+  - task: CopyFiles@2
+    inputs:
+        contents: '_buildOutput/**'
+        targetFolder: $(Build.ArtifactStagingDirectory)
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+        pathToPublish: $(Build.ArtifactStagingDirectory)
+        artifactName: ScanReports

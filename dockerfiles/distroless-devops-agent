@@ -10,22 +10,17 @@ RUN apk add --no-cache \
     git \
     build-base \
     python3 \
-    py3-pip \
-    && python3 -m ensurepip
+    py3-pip
 
-# Install Azure CLI
-RUN apk add --no-cache gcc musl-dev python3-dev libffi-dev openssl-dev \
-    && pip3 install azure-cli \
-    && apk del gcc musl-dev python3-dev libffi-dev openssl-dev
 
 # Install Terraform
-RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/latest/terraform_linux_amd64.zip \
+RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip \
     && unzip terraform.zip \
     && mv terraform /usr/local/bin/ \
     && rm terraform.zip
 
 # Install PowerShell Core
-RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/latest/download/powershell-linux-alpine-x64.tar.gz \
+RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/powershell-7.4.0-linux-musl-x64.tar.gz \
     && mkdir -p /opt/microsoft/powershell \
     && tar -xzf powershell.tar.gz -C /opt/microsoft/powershell \
     && ln -s /opt/microsoft/powershell/pwsh /usr/bin/pwsh \
@@ -34,12 +29,15 @@ RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/
 # Install Node.js LTS
 RUN apk add --no-cache nodejs npm
 
+# Install bash for .NET SDK installation
+RUN apk add --no-cache bash
+
 # Install .NET SDK
-RUN wget -O dotnet.tar.gz https://download.visualstudio.microsoft.com/download/pr/8e2c4b8e-9c6c-4b2e-9b3e-5c3e5f4e6c7d/dotnet-sdk-8.0.100-linux-musl-x64.tar.gz \
-    && mkdir -p /usr/share/dotnet \
-    && tar -xzf dotnet.tar.gz -C /usr/share/dotnet \
+RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
+    && chmod +x dotnet-install.sh \
+    && /bin/bash ./dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet \
     && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet \
-    && rm dotnet.tar.gz
+    && rm dotnet-install.sh
 
 # Install additional tools
 RUN apk add --no-cache jq
@@ -57,7 +55,6 @@ COPY --from=builder /usr/bin/dotnet /usr/bin/dotnet
 COPY --from=builder /usr/bin/jq /usr/bin/jq
 COPY --from=builder /usr/bin/git /usr/bin/git
 COPY --from=builder /usr/bin/curl /usr/bin/curl
-COPY --from=builder /usr/local/bin/az /usr/local/bin/az
 
 # Copy libraries
 COPY --from=builder /lib /lib

@@ -1,3 +1,10 @@
+trigger:
+  branches:
+    include:
+    - main
+    - master
+    - develop
+
 ---
 
 variables:
@@ -15,7 +22,7 @@ jobs:
     - task: Docker@2
       displayName: "Building image."
       inputs:
-        containerRegistry: "CLorg-Sub1-ACR"
+        containerRegistry: "cl-demo-sub1acr"
         repository: $(repositoryName)
         tags: $(tagName)
         command: build
@@ -24,16 +31,10 @@ jobs:
     - task: Docker@2
       displayName: "Pushing image to the ACR"
       inputs:
-        containerRegistry: "CLorg-Sub1-ACR"
+        containerRegistry: "cl-demo-sub1acr"
         repository: $(repositoryName)
         tags: $(tagName)
         command: push
-
-    - task: Docker@2
-      displayName: "Docker ACR login"
-      inputs:
-        containerRegistry: 'CLorg-Sub1-ACR'
-        command: 'login'
 
     - task: CmdLine@2
       displayName: "Run trivy scan"

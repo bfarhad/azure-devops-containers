@@ -8,7 +8,7 @@ RUN apt-get -q update; \
     | tar -xz -C $TMP_DIR --strip-components=1 \
   && mv $TMP_DIR /opt/java
 
-FROM gcr.io/distroless/base-debian11:latest
+FROM gcr.io/distroless/base:latest
 
 
 ENV JAVA_HOME=/opt/java \

@@ -1,4 +1,9 @@
-trigger: none
+trigger:
+  branches:
+    include:
+    - main
+    - master
+    - develop
 
 parameters:
   - name: baseImageNameShort
@@ -13,11 +18,12 @@ parameters:
   - name: correttoVersionMajor
     displayName: "Select Corretto major version:"
     type: number
-    default: 8
+    default: 21
     values:
     - 8
     - 11
     - 17
+    - 21
   - name: tomcatVersionMajor
     displayName: "Select Tomcat major version:"
     type: number
@@ -54,7 +60,7 @@ variables:
   - name: dockerfilePath
     value: "willBeSetByBashTask"
   - name: trivyVersion
-    value: 'latest'  
+    value: '0.50.1'
 
 # TODO:
 # Fix TOMCAT_V_VERSION variable filtering for "tomcat-10"
@@ -68,9 +74,9 @@ jobs:
     vmImage: ubuntu-latest
   steps:
     - script: |
-        sudo apt-get install rpm
-        wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.deb
-        sudo dpkg -i trivy_$(trivyVersion)_Linux-64bit.deb
+        wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.tar.gz
+        tar -xzf trivy_$(trivyVersion)_Linux-64bit.tar.gz
+        sudo mv trivy /usr/local/bin/
         trivy -v
       displayName: 'Download and install Trivy'
 
@@ -115,7 +121,7 @@ jobs:
       displayName: "Build Docker image"
       inputs:
         command: build
-        containerRegistry: CLorg-Sub1-ACR
+        containerRegistry: cl-demo-sub1acr
         repository: $(imageName)
         addPipelineData: true
         Dockerfile: $(dockerfilePath)
@@ -133,30 +139,52 @@ jobs:
     - task: Docker@2
       displayName: "Pushing image to ACR $(acrName)"
       inputs:
-        containerRegistry: "CLorg-Sub1-ACR"
+        containerRegistry: "cl-demo-sub1acr"
         repository: $(imageName)
         tags: |
           $(imageTag)
           latest
         command: push
 
-    - task: Docker@2
-      displayName: "Docker ACR login"
-      inputs:
-        containerRegistry: 'CLorg-Sub1-ACR'
-        command: 'login'
-
     - task: CmdLine@2
       displayName: "Run trivy scan"
       inputs:
         script: |
-          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag)
-          trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
-
-          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
-          trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
-
+          # trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag)
+          # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
+          ls -lha       
+          echo CRITICAL SCAN START
+           trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
+           trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
+          echo NON-CRITICAL SCAN START
+           trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
+           trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)
+          # trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
+          # trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
+           ls -lha
           echo SCAN FINISHED
+
+ 
+
+    - task: PublishTestResults@2
+      displayName: "Publish critical scan result"
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/junit-report-high-crit.xml'
+        mergeTestResults: true
+        failTaskOnFailedTests: false
+        testRunTitle: 'Trivy - High and Critical Vulnerabilities'
+      condition: 'always()'  
+
+    - task: PublishTestResults@2
+      displayName: "Publish non-critical scan result"
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/junit-report-low-med.xml'
+        mergeTestResults: true
+        failTaskOnFailedTests: false
+        testRunTitle: 'Trivy - Low and Medium Vulnerabilities'
+      condition: 'always()'  
 
     - task: CopyFiles@2
       inputs:
