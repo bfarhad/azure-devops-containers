@@ -5,8 +5,8 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  acrName: 'cl-demo-sub1acr'
-  acrLoginServer: 'cloudladderacr.azurecr.io'
+  acrName: 'cldemosub1acr'
+  acrLoginServer: 'cldemosub1acr.azurecr.io'
   imageName: 'distroless-devops-agent'
   tag: 'latest'
   resourceGroup: 'global-management-RG'
@@ -26,9 +26,19 @@ stages:
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
+          # Get storage account key
+          storageAccountKey=$(az storage account keys list --resource-group $(resourceGroup) --account-name $(storageAccountName) --query '[0].value' -o tsv)
+          echo "##vso[task.setvariable variable=storageAccountKey]$storageAccountKey"
+
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'CL-demo-sub1(648f668b-eaab-4a61-914a-190c7a924419)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
           # Login to ACR
           az acr login --name $(acrName)
-          
+
           # Create ACI with Azure File Share mount and run the agent
           az container create \
             --resource-group $(resourceGroup) \
@@ -43,7 +53,7 @@ stages:
             --azure-file-volume-mount-path /azp/_work \
             --environment-variables AZP_URL='$(System.CollectionUri)' AZP_TOKEN='$(System.AccessToken)' AZP_AGENT_NAME='aci-agent' AZP_POOL='$(agentPoolName)' \
             --ports 80
-          
+
           # For autoscaling, you can set up Azure Monitor autoscale rules based on CPU or custom metrics.
           # Example: az monitor autoscale create --resource /subscriptions/... --name autoscale --target /subscriptions/.../containerGroups/$(containerGroupName) --min-count 1 --max-count 5 --count 1
 

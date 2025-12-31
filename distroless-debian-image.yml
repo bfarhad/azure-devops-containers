@@ -23,7 +23,7 @@ trigger:
     include:
     - main
     - master
-    - develop
+    #- develop
 
 parameters:
   # Debian release version
