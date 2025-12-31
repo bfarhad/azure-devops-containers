@@ -1,0 +1,31 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  acrName: 'cl-demo-sub1acr'
+  acrLoginServer: 'cloudladderacr.azurecr.io'
+  imageName: 'distroless-devops-agent'
+  tag: 'latest'
+
+resources:
+  containers:
+  - container: devopsAgent
+    image: $(acrLoginServer)/$(imageName):$(tag)
+    endpoint: your-acr-service-connection
+
+stages:
+- stage: Test
+  jobs:
+  - job: TestAzCli
+    container: devopsAgent
+    steps:
+    - script: |
+        az version
+      displayName: 'Test Azure CLI Version'
+
+# Note: For autoscaling with ACI, consider using Azure Container Apps.
+# This pipeline uses container jobs in Azure Pipelines, which run the container for each job.
+# Autoscaling can be achieved by running multiple jobs or using Azure Container Apps for the agent.
