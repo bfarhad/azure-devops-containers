@@ -22,7 +22,7 @@ stages:
     steps:
     - task: AzureCLI@2
       inputs:
-        azureSubscription: 'CLorg-stdperm-SP'
+        azureSubscription: 'CL-demo-sub1(648f668b-eaab-4a61-914a-190c7a924419)'
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
