@@ -25,6 +25,8 @@ variables:
   agentPoolName: 'aci-agent-pool'
   storageAccountName: 'centralwelogstorage'
   fileShareName: 'agent-files'
+  vnetName: 'cl-we-dev-vnet'
+  subnetName: 'Servers'
 
 stages:
 - stage: DeployACI
