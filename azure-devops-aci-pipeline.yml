@@ -66,7 +66,7 @@ stages:
             --image $(acrLoginServer)/$(imageName):$(tag) \
             --registry-username "$acrUsername" --registry-password "$acrPassword" \
             --os-type Linux \
-            --ip-address None \
+            --ip-address Private \
             --cpu 1 --memory 1.5 \
             --restart-policy Always \
             --azure-file-volume-account-name $(storageAccountName) \
