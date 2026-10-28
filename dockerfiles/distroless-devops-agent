@@ -1,75 +1,62 @@
-FROM alpine:latest AS builder
+FROM alpine:3.20
 
-# Install dependencies
+# Install tools, package dependencies, and musl runtime libraries
 RUN apk add --no-cache \
+    bash \
     curl \
-    wget \
-    gnupg \
-    unzip \
-    tar \
     git \
-    build-base \
+    icu-libs \
+    jq \
+    krb5-libs \
+    libgcc \
+    libstdc++ \
+    nodejs \
+    npm \
+    openssl \
+    py3-pip \
     python3 \
-    py3-pip
+    tar \
+    unzip \
+    wget \
+    zlib
 
+ARG TERRAFORM_VERSION=1.9.8
+ARG POWERSHELL_VERSION=7.4.0
+ARG DOTNET_SDK_VERSION=9.0.320
 
-# Install Terraform
-RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip \
-    && unzip terraform.zip \
-    && mv terraform /usr/local/bin/ \
-    && rm terraform.zip
+# Install Terraform and verify with published SHA256SUMS
+RUN wget -q "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
+    && wget -q "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS" \
+    && grep "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" "terraform_${TERRAFORM_VERSION}_SHA256SUMS" | sha256sum -c - \
+    && unzip "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -d /usr/local/bin \
+    && rm "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" "terraform_${TERRAFORM_VERSION}_SHA256SUMS"
 
-# Install PowerShell Core
-RUN wget -O powershell.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.4.0/powershell-7.4.0-linux-musl-x64.tar.gz \
+# Install PowerShell Core and verify it with the hashes.sha256 file published with the release
+RUN wget -q -O powershell.tar.gz "https://github.com/PowerShell/PowerShell/releases/download/v${POWERSHELL_VERSION}/powershell-${POWERSHELL_VERSION}-linux-musl-x64.tar.gz" \
+    && wget -q -O hashes.sha256 "https://github.com/PowerShell/PowerShell/releases/download/v${POWERSHELL_VERSION}/hashes.sha256" \
+    && echo "$(grep "powershell-${POWERSHELL_VERSION}-linux-musl-x64.tar.gz" hashes.sha256 | cut -d' ' -f1)  powershell.tar.gz" | sha256sum -c - \
     && mkdir -p /opt/microsoft/powershell \
     && tar -xzf powershell.tar.gz -C /opt/microsoft/powershell \
+    && chmod +x /opt/microsoft/powershell/pwsh \
     && ln -s /opt/microsoft/powershell/pwsh /usr/bin/pwsh \
-    && rm powershell.tar.gz
+    && rm powershell.tar.gz hashes.sha256
 
-# Install Node.js LTS
-RUN apk add --no-cache nodejs npm
-
-# Install bash for .NET SDK installation
-RUN apk add --no-cache bash
-
-# Install .NET SDK
-RUN wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
+# Install the .NET 9 SDK, pinned to an exact version
+RUN wget -q https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh \
     && chmod +x dotnet-install.sh \
-    && /bin/bash ./dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet \
+    && /bin/bash ./dotnet-install.sh --version "${DOTNET_SDK_VERSION}" --install-dir /usr/share/dotnet \
     && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet \
     && rm dotnet-install.sh
 
-# Install additional tools
-RUN apk add --no-cache jq
+# Configure environment variables
+ENV DOTNET_ROOT=/usr/share/dotnet
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
-FROM alpine:latest
+# Create non-root user azp (uid 1000) and set workspace
+RUN adduser -u 1000 -D -h /azp azp \
+    && chown -R azp:azp /azp
 
-# Copy installed tools from builder
-COPY --from=builder /usr/bin/python3 /usr/bin/python3
-COPY --from=builder /usr/bin/pip3 /usr/bin/pip3
-COPY --from=builder /usr/local/bin/terraform /usr/local/bin/terraform
-COPY --from=builder /usr/bin/pwsh /usr/bin/pwsh
-COPY --from=builder /usr/bin/node /usr/bin/node
-COPY --from=builder /usr/bin/npm /usr/bin/npm
-COPY --from=builder /usr/bin/dotnet /usr/bin/dotnet
-COPY --from=builder /usr/bin/jq /usr/bin/jq
-COPY --from=builder /usr/bin/git /usr/bin/git
-COPY --from=builder /usr/bin/curl /usr/bin/curl
-
-# Copy libraries
-COPY --from=builder /lib /lib
-COPY --from=builder /usr/lib /usr/lib
-COPY --from=builder /usr/local/lib /usr/local/lib
-COPY --from=builder /usr/share/dotnet /usr/share/dotnet
-COPY --from=builder /opt/microsoft/powershell /opt/microsoft/powershell
-
-# Set environment variables
-ENV PATH="/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/sbin:/bin:/opt/microsoft/powershell"
-ENV PYTHONPATH="/usr/lib/python3.12"
-ENV DOTNET_ROOT="/usr/share/dotnet"
-
-# Create working directory
 WORKDIR /azp
+USER azp
 
-# Default command
 CMD ["/bin/sh"]

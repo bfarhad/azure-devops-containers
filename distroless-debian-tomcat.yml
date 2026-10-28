@@ -1,26 +1,24 @@
-trigger:
-  branches:
-    include:
-    - main
-    - master
-    - develop
+# Started by hand: the registry name and service connection are entered at run time.
+trigger: none
 
 parameters:
+  - name: acrName
+    displayName: "Azure Container Registry host name (for example myregistry.azurecr.io):"
+    type: string
+  - name: acrServiceConnection
+    displayName: "Azure DevOps Docker registry service connection for that registry:"
+    type: string
   - name: baseImageNameShort
     displayName: "Select base image:"
     type: string
-    default: "distroless-base-debian11"
+    default: "distroless-base-debian12"
     values:
-    - distroless-base-debian11
-    - distroless-static-debian11
-    - distroless-base-debian10
-    - distroless-static-debian10
+    - distroless-base-debian12
   - name: correttoVersionMajor
     displayName: "Select Corretto major version:"
     type: number
     default: 21
     values:
-    - 8
     - 11
     - 17
     - 21
@@ -29,21 +27,12 @@ parameters:
     type: number
     default: 10
     values:
-    - 8
-    - 9
     - 10
-  - name: buildWithTomcatNative
-    displayName: "Build with Tomcat Native Library?"
-    type: string
-    default: "No"
-    values:
-      - "No"
-      - "Yes"
 
 variables:
-  # ACR where to push new image
+  # ACR where to push the new image: entered when the pipeline is run
   - name: acrName
-    value: "cloudladderacr.azurecr.io"
+    value: ${{ parameters.acrName }}
   # Global variable to be used in different tasks/jobs/stages
   - name: baseImageName
     value: "willBeSetByBashTask"
@@ -62,17 +51,25 @@ variables:
   - name: trivyVersion
     value: '0.50.1'
 
-# TODO:
-# Fix TOMCAT_V_VERSION variable filtering for "tomcat-10"
-# Support "native" or "no native" Dockerfiles from single pipeline (or don't - need to decide)
+# The Dockerfile (dockerfiles/distroless-debian-tomcat) builds Tomcat 10 on Corretto 11, 17 or 21.
+# A Tomcat Native variant is not part of this repository.
 
 jobs:
 - job:
   displayName: "Build Tomcat image based on distroless Debian-based image (based on gcr.io/distroless) with Amazon Corretto OpenJDK"
-  timeoutInMinutes: 10
+  timeoutInMinutes: 30
   pool: 
     vmImage: ubuntu-latest
   steps:
+    - script: |
+        if ! printf '%s' "$ACR_NAME" | grep -Eq '^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)+$'; then
+          echo "##vso[task.logissue type=error]acrName must be a registry host name such as myregistry.azurecr.io"
+          exit 1
+        fi
+      displayName: "Check the registry name"
+      env:
+        ACR_NAME: ${{ parameters.acrName }}
+
     - script: |
         wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.tar.gz
         tar -xzf trivy_$(trivyVersion)_Linux-64bit.tar.gz
@@ -87,24 +84,15 @@ jobs:
         targetType: 'inline'
         script: |
           TOMCAT_MAJOR=${{ parameters.tomcatVersionMajor }}
-          TOMCAT_VERSION_FULL=$(curl -sk https://dlcdn.apache.org/tomcat/tomcat-${TOMCAT_MAJOR}/ | grep -m 1 ">v${TOMCAT_MAJOR}" | sed "s/.*>v${TOMCAT_MAJOR}/${TOMCAT_MAJOR}/" | sed 's/\/<.*//')
+          # the newest ${TOMCAT_MAJOR}.x.y release listed on the Apache mirror
+          TOMCAT_VERSION_FULL=$(curl -fsSL https://dlcdn.apache.org/tomcat/tomcat-${TOMCAT_MAJOR}/ | grep -oE ">v${TOMCAT_MAJOR}\.[0-9]+\.[0-9]+" | sed 's/>v//' | sort -V | tail -n 1)
+          if [ -z "$TOMCAT_VERSION_FULL" ]; then echo "##vso[task.logissue type=error]Could not find a Tomcat ${TOMCAT_MAJOR} release"; exit 1; fi
           DATE="$(date +%Y%m%d)"
           BASE_IMAGE_NAME="${{ parameters.baseImageNameShort }}-corretto${{ parameters.correttoVersionMajor }}"
           IMAGE_TAG="${TOMCAT_VERSION_FULL}-${DATE}-$(Build.BuildId)"
-          WITH_NATIVE="${{ parameters.buildWithTomcatNative }}"
-          # Build without Tomcat Native Library
-          if [ "$WITH_NATIVE" = "No" ]
-          then
-            IMAGE_NAME="${BASE_IMAGE_NAME}-tomcat${{ parameters.tomcatVersionMajor }}"
-            DOCKER_FILE_PATH="dockerfiles/distroless-debian-tomcat"
-            echo "##vso[build.updatebuildnumber]${IMAGE_TAG}"
-          # Build with Tomcat Native Library
-          else
-            IMAGE_NAME="${BASE_IMAGE_NAME}-tomcat${{ parameters.tomcatVersionMajor }}-native"
-            DOCKER_FILE_PATH="dockerfiles/distroless-debian-tomcat-native"
-            BUILD_NUMBER="${TOMCAT_VERSION_FULL}-native-${DATE}-$(Build.BuildId)"
-            echo "##vso[build.updatebuildnumber]${BUILD_NUMBER}"
-          fi
+          IMAGE_NAME="${BASE_IMAGE_NAME}-tomcat${{ parameters.tomcatVersionMajor }}"
+          DOCKER_FILE_PATH="dockerfiles/distroless-debian-tomcat"
+          echo "##vso[build.updatebuildnumber]${IMAGE_TAG}"
           echo "##vso[task.setvariable variable=tomcatVersionFull]${TOMCAT_VERSION_FULL}"
           echo "##vso[task.setvariable variable=baseImageName]${BASE_IMAGE_NAME}"
           echo "##vso[task.setvariable variable=imageName]${IMAGE_NAME}"
@@ -121,7 +109,7 @@ jobs:
       displayName: "Build Docker image"
       inputs:
         command: build
-        containerRegistry: cl-demo-sub1acr
+        containerRegistry: ${{ parameters.acrServiceConnection }}
         repository: $(imageName)
         addPipelineData: true
         Dockerfile: $(dockerfilePath)
@@ -129,17 +117,13 @@ jobs:
           $(imageTag)
           latest
         arguments: |
-         --build-arg baseImageName="$(baseImageName)"
-         --build-arg baseImageTag="latest"
-         --build-arg tomcatVersionMajor="${{ parameters.tomcatVersionMajor }}"
-         --build-arg tomcatVersionFull="$(tomcatVersionFull)"
-         --build-arg imageName=$(imageName)
-         --build-arg imageTag=$(imageTag)
+         --build-arg TOMCAT_VERSION=$(tomcatVersionFull)
+         --build-arg CORRETTO_MAJOR=${{ parameters.correttoVersionMajor }}
 
     - task: Docker@2
       displayName: "Pushing image to ACR $(acrName)"
       inputs:
-        containerRegistry: "cl-demo-sub1acr"
+        containerRegistry: ${{ parameters.acrServiceConnection }}
         repository: $(imageName)
         tags: |
           $(imageTag)
@@ -155,7 +139,7 @@ jobs:
           ls -lha       
           echo CRITICAL SCAN START
            trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
-           trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
+           trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --scanners vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
           echo NON-CRITICAL SCAN START
            trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
            trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)

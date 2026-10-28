@@ -18,7 +18,7 @@ All Docker images and pipelines have been updated to use the latest stable versi
 ## Dockerfile Changes
 
 ### Corretto Images
-- **Files Updated**: `dockerfiles/distroless-deb11-corretto`, `dockerfiles/distroless-debian11-corretta8`
+- **Files Updated**: `dockerfiles/distroless-deb12-corretto` (earlier `distroless-deb11-corretto`), `dockerfiles/distroless-debian11-corretta8`
 - **Change**: Updated download URL from `amazon-corretto-8-x64-linux-jdk.tar.gz` to `amazon-corretto-21-x64-linux-jdk.tar.gz`
 - **Impact**: Images now use Amazon Corretto 21 (latest LTS) instead of version 8
 
@@ -37,7 +37,7 @@ All Docker images and pipelines have been updated to use the latest stable versi
   - Default Corretto version changed from 8 to 21
   - Added 21 to selectable version values
 - **Dockerfile Path**: Made dynamic by setting in build script instead of hardcoded path
-- **File Renaming**: Renamed `distroless-deb11-corretto8` to `distroless-deb11-corretto` for version-agnostic usage
+- **File Renaming**: Renamed `distroless-deb11-corretto8` to `distroless-deb11-corretto` for version-agnostic usage; it is now `distroless-deb12-corretto` (Debian 12 base)
 - **Documentation**: Updated comments to reflect Corretto 21 support
 
 ### distroless-debian-tomcat.yml (Tomcat Pipeline)
@@ -62,12 +62,12 @@ Similar changes were applied to related repositories:
 A specialized Alpine Linux container designed for Azure DevOps pipeline agents, containing essential DevOps and development tools.
 
 ### Included Tools
-- **Terraform 1.9.8**: Latest stable version for infrastructure as code (updated for CVE-2024-45337 fix)
-- **Azure CLI**: Latest version for Azure resource management
+- **Terraform 1.9.8**: infrastructure as code (updated for CVE-2024-45337 fix); the download is verified against HashiCorp's SHA256SUMS
+  PowerShell is verified against the `hashes.sha256` file of its release.
 - **PowerShell Core**: Latest version for cross-platform scripting
 - **Python 3.12**: Latest stable Python with pip
 - **Node.js LTS**: Latest LTS version with npm
-- **.NET 8.0 SDK**: Latest .NET SDK for .NET development
+- **.NET 9 SDK**: pinned to an exact version (9.0.320) for .NET development
 - **Git**: Version control system
 - **jq**: JSON processor
 - **curl**: HTTP client
@@ -154,8 +154,10 @@ This container can be used as a base image for Azure DevOps self-hosted agents o
 For base Amazon Corretto images, use the respective Dockerfiles:
 
 ```bash
-# Build Corretto 21 base image
-docker build -t distroless-base-debian11-corretto21 -f distroless-deb11-corretto .
+# Build Corretto 21 on distroless Debian 12 (CORRETTO_MAJOR: 8, 11, 17 or 21; DEBIAN_VERSION: 12)
+docker build -t distroless-base-debian12-corretto21 -f distroless-deb12-corretto \
+  --build-arg CORRETTO_MAJOR=21 --build-arg DEBIAN_VERSION=12 .
+docker run --rm distroless-base-debian12-corretto21 java -version
 ```
 
 ## CI/CD Pipeline Usage
@@ -167,6 +169,18 @@ The repository includes Azure DevOps pipelines for automated building:
 
 Both pipelines include Trivy vulnerability scanning and publish results to Azure DevOps.
 
+### GitHub Actions
+
+`.github/workflows/build-containers.yml` builds every image on each push to `main`, `master` or `develop` and on pull requests:
+
+| Job | What it does |
+|---|---|
+| `build` (matrix) | Builds Corretto 8, 11, 17 and 21, Tomcat 10 and the DevOps agent; runs a smoke test on each (`java -version`, Tomcat answering on 8080, every agent tool); scans with Trivy (HIGH and CRITICAL; reports do not fail the build) |
+| `source-bundle` | Packs the repository at the commit as the artifact `repository-<short sha>` |
+| `publish` | Only on push to `main` or `master`: loads the built images and pushes them to `ghcr.io/<owner>/<image>` as `latest` and `<date>-<short sha>` |
+
+Artifacts, kept 14 days: `image-<name>` (the image as a gzip tarball), `scan-<name>` (table, SARIF and JUnit reports) and `repository-<short sha>`. Every action is pinned to a commit SHA.
+
 # Build and Test
 
 ## Local Testing
@@ -176,7 +190,7 @@ Both pipelines include Trivy vulnerability scanning and publish results to Azure
 1. **Tomcat Container**:
    ```bash
    docker run -d -p 8080:8080 --name tomcat-test distroless-debian-tomcat
-   curl http://localhost:8080
+   curl -i http://localhost:8080   # 404 is expected: the example webapps are removed
    ```
 
 2. **DevOps Agent Container**:

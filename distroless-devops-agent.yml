@@ -6,17 +6,21 @@
 # Resulting image name: distroless-devops-agent
 # Resulting tag name: latest-$date-$buildIdClean
 
-trigger:
-  branches:
-    include:
-    - main
-    - master
-    - develop
+# Started by hand: the registry name and service connection are entered at run time.
+trigger: none
+
+parameters:
+  - name: acrName
+    displayName: "Azure Container Registry host name (for example myregistry.azurecr.io):"
+    type: string
+  - name: acrServiceConnection
+    displayName: "Azure DevOps Docker registry service connection for that registry:"
+    type: string
 
 variables:
-  # ACR where to push new image
+  # ACR where to push the new image: entered when the pipeline is run
   - name: acrName
-    value: "cloudladderacr.azurecr.io"
+    value: ${{ parameters.acrName }}
   # Global variable to be used in different tasks/jobs/stages
   - name: imageName
     value: "distroless-devops-agent"
@@ -37,6 +41,15 @@ jobs:
   displayName: "Build distroless DevOps Agent image"
   timeoutInMinutes: 30
   steps:
+  - script: |
+      if ! printf '%s' "$ACR_NAME" | grep -Eq '^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)+$'; then
+        echo "##vso[task.logissue type=error]acrName must be a registry host name such as myregistry.azurecr.io"
+        exit 1
+      fi
+    displayName: "Check the registry name"
+    env:
+      ACR_NAME: ${{ parameters.acrName }}
+
   - checkout: self
 
   - script: |
@@ -63,7 +76,7 @@ jobs:
     displayName: "Build Docker image"
     inputs:
       command: build
-      containerRegistry: cl-demo-sub1acr
+      containerRegistry: ${{ parameters.acrServiceConnection }}
       repository: $(imageName)
       addPipelineData: true
       Dockerfile: $(dockerfilePath)
@@ -74,7 +87,7 @@ jobs:
   - task: Docker@2
     displayName: "Pushing image to ACR $(acrName)"
     inputs:
-      containerRegistry: "cl-demo-sub1acr"
+      containerRegistry: ${{ parameters.acrServiceConnection }}
       repository: $(imageName)
       tags: |
         $(imageTag)
@@ -90,7 +103,7 @@ jobs:
         ls -lha
         echo CRITICAL SCAN START
         trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
-        trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
+        trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --scanners vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
         echo NON-CRITICAL SCAN START
         trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
         trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)

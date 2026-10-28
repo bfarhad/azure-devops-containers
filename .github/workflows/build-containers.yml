@@ -1,0 +1,242 @@
+name: build-containers
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+    paths-ignore:
+      - '*.md'
+  pull_request:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: distroless-base-debian12-corretto8
+            dockerfile: dockerfiles/distroless-deb12-corretto
+            build-args: |
+              CORRETTO_MAJOR=8
+              DEBIAN_VERSION=12
+            smoke: docker run --rm distroless-base-debian12-corretto8:ci java -version
+          - name: distroless-base-debian12-corretto11
+            dockerfile: dockerfiles/distroless-deb12-corretto
+            build-args: |
+              CORRETTO_MAJOR=11
+              DEBIAN_VERSION=12
+            smoke: docker run --rm distroless-base-debian12-corretto11:ci java -version
+          - name: distroless-base-debian12-corretto17
+            dockerfile: dockerfiles/distroless-deb12-corretto
+            build-args: |
+              CORRETTO_MAJOR=17
+              DEBIAN_VERSION=12
+            smoke: docker run --rm distroless-base-debian12-corretto17:ci java -version
+          - name: distroless-base-debian12-corretto21
+            dockerfile: dockerfiles/distroless-deb12-corretto
+            build-args: |
+              CORRETTO_MAJOR=21
+              DEBIAN_VERSION=12
+            smoke: docker run --rm distroless-base-debian12-corretto21:ci java -version
+          - name: distroless-tomcat10-corretto21
+            dockerfile: dockerfiles/distroless-debian-tomcat
+            build-args: ""
+            smoke: |
+              CID=$(docker run -d -p 8080:8080 distroless-tomcat10-corretto21:ci)
+              success=0
+              for i in $(seq 1 60); do
+                STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ || true)
+                if [ "$STATUS" = "200" ] || [ "$STATUS" = "404" ]; then
+                  echo "Tomcat ready with HTTP $STATUS"
+                  success=1
+                  break
+                fi
+                sleep 1
+              done
+              if [ "$success" -ne 1 ]; then
+                echo "Tomcat failed health check"
+                docker logs "$CID"
+                docker rm -f "$CID"
+                exit 1
+              fi
+              docker rm -f "$CID"
+          - name: distroless-devops-agent
+            dockerfile: dockerfiles/distroless-devops-agent
+            build-args: ""
+            smoke: docker run --rm distroless-devops-agent:ci sh -c 'terraform version && pwsh -Version && node --version && dotnet --version && python3 --version && jq --version && git --version'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Extract OCI metadata
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ${{ matrix.name }}
+
+      - name: Build container image
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build-args }}
+          tags: ${{ matrix.name }}:ci
+          load: true
+          provenance: false
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Run smoke test
+        run: |
+          ${{ matrix.smoke }}
+
+      - name: Prepare reports directory
+        run: mkdir -p reports/${{ matrix.name }}
+
+      - name: Trivy scan (Table)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.name }}:ci
+          format: table
+          output: reports/${{ matrix.name }}/trivy-table.txt
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Trivy scan (SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.name }}:ci
+          format: sarif
+          output: reports/${{ matrix.name }}/trivy.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Trivy scan (JUnit)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.name }}:ci
+          format: template
+          template: '@template/junit.tpl'
+          output: reports/${{ matrix.name }}/trivy-junit.xml
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Save container image
+        if: always()
+        run: |
+          if docker image inspect "${{ matrix.name }}:ci" >/dev/null 2>&1; then
+            docker save "${{ matrix.name }}:ci" | gzip > "${{ matrix.name }}.tar.gz"
+          fi
+
+      - name: Upload image artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-${{ matrix.name }}
+          path: ${{ matrix.name }}.tar.gz
+          retention-days: 14
+
+      - name: Upload scan reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scan-${{ matrix.name }}
+          path: reports/${{ matrix.name }}
+          retention-days: 14
+
+  source-bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Create source bundle archive
+        id: archive
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          git archive --format=tar.gz -o "repository-${SHORT_SHA}.tar.gz" HEAD
+
+      - name: Upload source bundle artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: repository-${{ steps.archive.outputs.short_sha }}
+          path: repository-${{ steps.archive.outputs.short_sha }}.tar.gz
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all image artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: image-*
+          path: images
+          merge-multiple: true
+
+      - name: Load and push container images
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          DATE=$(date -u +'%Y%m%d')
+          TAG_DATE_SHA="${DATE}-${SHORT_SHA}"
+
+          for archive in images/*.tar.gz; do
+            [ -f "$archive" ] || continue
+            echo "Loading $archive..."
+            docker load < "$archive"
+          done
+
+          IMAGES=(
+            "distroless-base-debian12-corretto8"
+            "distroless-base-debian12-corretto11"
+            "distroless-base-debian12-corretto17"
+            "distroless-base-debian12-corretto21"
+            "distroless-tomcat10-corretto21"
+            "distroless-devops-agent"
+          )
+
+          for IMG in "${IMAGES[@]}"; do
+            TARGET_LATEST="ghcr.io/${OWNER}/${IMG}:latest"
+            TARGET_DATE_SHA="ghcr.io/${OWNER}/${IMG}:${TAG_DATE_SHA}"
+            docker tag "${IMG}:ci" "$TARGET_LATEST"
+            docker tag "${IMG}:ci" "$TARGET_DATE_SHA"
+            docker push "$TARGET_LATEST"
+            docker push "$TARGET_DATE_SHA"
+          done

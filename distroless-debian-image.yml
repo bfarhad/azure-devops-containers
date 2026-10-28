@@ -6,7 +6,7 @@
 # or acknowledge each CVE in Aqua's web-UI under CI/CD tab.
 #
 # Resulting image name is:
-# distroless-[static|base]-debian[10|11]-corretto[8|11|17|21]
+# distroless-base-debian12-corretto[8|11|17|21]
 # Resulting tag name is:
 # latest-$date-$buildIdClean (e.g., latest-20251231-20251231123456)
 #
@@ -18,33 +18,32 @@
 # - Major version is set by "correttoVersionMajor" variable
 # - Always latest minor version is downloaded
 
-trigger:
-  branches:
-    include:
-    - main
-    - master
-    - develop
+# Started by hand: the registry name and service connection are entered at run time.
+trigger: none
 
 parameters:
+  - name: acrName
+    displayName: "Azure Container Registry host name (for example myregistry.azurecr.io):"
+    type: string
+  - name: acrServiceConnection
+    displayName: "Azure DevOps Docker registry service connection for that registry:"
+    type: string
   # Debian release version
   - name: baseImageDebianVersion
     displayName: "Select Debian major release version:"
     type: number
-    default: 11
+    default: 12
     values:
-    - 10
-    - 11
+    - 12
   # GCR's distroless-base-image type
   # Passed to Dockerfile and used by FROM command
-  # static: no glibc and openssl
-  # base: includes glibc and openssl
+  # base: includes glibc and openssl (a JDK needs them, so only base is offered)
   # More info at https://github.com/GoogleContainerTools/distroless
   - name: baseImageFlavor
     displayName: "Select GCR image type:"
     type: string
     default: base
     values:
-    - static
     - base
   # Corretto's version to download and build image with
   - name: correttoVersionMajor
@@ -58,9 +57,9 @@ parameters:
     - 21
 
 variables:
-  # ACR where to push new image
+  # ACR where to push the new image: entered when the pipeline is run
   - name: acrName
-    value: "cloudladderacr.azurecr.io"
+    value: ${{ parameters.acrName }}
   # Options: static, base
   - name: baseImageFlavor
     value: ${{ parameters.baseImageFlavor }}
@@ -94,8 +93,17 @@ pool:
 jobs:
 - job:
   displayName: Build distroless Debian-based image (based on gcr.io/distroless) with Amazon Corretto OpenJDK
-  timeoutInMinutes: 0
+  timeoutInMinutes: 60
   steps:
+  - script: |
+      if ! printf '%s' "$ACR_NAME" | grep -Eq '^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)+$'; then
+        echo "##vso[task.logissue type=error]acrName must be a registry host name such as myregistry.azurecr.io"
+        exit 1
+      fi
+    displayName: "Check the registry name"
+    env:
+      ACR_NAME: ${{ parameters.acrName }}
+
   - checkout: self
   
   - script: |
@@ -116,7 +124,7 @@ jobs:
         BASE_IMAGE_NAME="$(baseImageFlavor)-debian$(baseImageDebianVersion)"
         IMAGE_NAME="distroless-$(baseImageFlavor)-debian$(baseImageDebianVersion)-corretto$(correttoVersionMajor)"
         IMAGE_TAG="latest-${DATE}-${BUILD_ID_CLEAN}"
-        DOCKER_FILE_PATH="dockerfiles/distroless-deb11-corretto"
+        DOCKER_FILE_PATH="dockerfiles/distroless-deb12-corretto"
         echo "##vso[build.updatebuildnumber]${IMAGE_TAG}"
         echo "##vso[task.setvariable variable=correttoVersionFull]latest"
         echo "##vso[task.setvariable variable=baseImageName]${BASE_IMAGE_NAME}"
@@ -129,7 +137,7 @@ jobs:
     displayName: "Build Docker image"
     inputs:
       command: build
-      containerRegistry: cl-demo-sub1acr
+      containerRegistry: ${{ parameters.acrServiceConnection }}
       repository: $(imageName)
       addPipelineData: true
       Dockerfile: $(dockerfilePath)
@@ -137,15 +145,14 @@ jobs:
         $(imageTag)
         latest
       arguments: |
-        --build-arg baseImageName=$(baseImageName)
-        --build-arg correttoVersion=$(correttoVersionFull)
-        --build-arg imageName=$(imageName)
-        --build-arg imageTag=$(imageTag)
+        --build-arg CORRETTO_MAJOR=$(correttoVersionMajor)
+        --build-arg DEBIAN_VERSION=$(baseImageDebianVersion)
+        --build-arg VERSION=$(imageTag)
   
   - task: Docker@2
     displayName: "Pushing image to ACR $(acrName)"
     inputs:
-      containerRegistry: "cl-demo-sub1acr"
+      containerRegistry: ${{ parameters.acrServiceConnection }}
       repository: $(imageName)
       tags: |
         $(imageTag)
@@ -161,7 +168,7 @@ jobs:
         ls -lha
         echo CRITICAL SCAN START
          trivy image --format table --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
-         trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --security-checks vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
+         trivy image --exit-code 0 --timeout 10m0s --severity HIGH,CRITICAL  --scanners vuln --format template --template "@template/junit.tpl" -o junit-report-high-crit.xml $(acrName)/$(imageName):$(imageTag)
         echo NON-CRITICAL SCAN START
          trivy image --format table --severity MEDIUM,LOW $(acrName)/$(imageName):$(imageTag)
          trivy image --exit-code 1 --timeout 10m0s --severity MEDIUM,LOW --format template --template "@template/junit.tpl" -o junit-report-low-med.xml $(acrName)/$(imageName):$(imageTag)
