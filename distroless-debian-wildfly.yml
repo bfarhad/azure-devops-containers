@@ -1,16 +1,30 @@
-trigger:
-  branches:
-    include:
-    - main
-    - master
-    - develop
+# Builds the Corretto 21 image under the repository name used for Wildfly images and pushes it to the ACR.
+# This repository has no Wildfly-specific Dockerfile yet: the image is the Corretto base from
+# dockerfiles/distroless-deb12-corretto.
+#
+# Started by hand: the registry name and the service connection are entered at run time.
+trigger: none
 
----
+parameters:
+  - name: acrName
+    displayName: "Azure Container Registry host name (for example myregistry.azurecr.io):"
+    type: string
+  - name: acrServiceConnection
+    displayName: "Azure DevOps Docker registry service connection for that registry:"
+    type: string
 
 variables:
-  repositoryName: "distroless-deb11-corretto"
-  tagName: "A-0.1"
-  dockerfilePath: dockerfiles/$(repositoryName)
+  # ACR where to push the new image: entered when the pipeline is run
+  - name: acrName
+    value: ${{ parameters.acrName }}
+  - name: imageName
+    value: "distroless-deb11-corretto"
+  - name: imageTag
+    value: "A-0.1"
+  - name: dockerfilePath
+    value: dockerfiles/distroless-deb12-corretto
+  - name: trivyVersion
+    value: '0.50.1'
 
 jobs:
 - job:
@@ -19,46 +33,58 @@ jobs:
   pool:
     vmImage: ubuntu-latest
   steps:
+    - script: |
+        if ! printf '%s' "$ACR_NAME" | grep -Eq '^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)+$'; then
+          echo "##vso[task.logissue type=error]acrName must be a registry host name such as myregistry.azurecr.io"
+          exit 1
+        fi
+      displayName: "Check the registry name"
+      env:
+        ACR_NAME: ${{ parameters.acrName }}
+
+    - script: |
+        wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.tar.gz
+        tar -xzf trivy_$(trivyVersion)_Linux-64bit.tar.gz
+        sudo mv trivy /usr/local/bin/
+        trivy -v
+      displayName: 'Download and install Trivy'
+
     - task: Docker@2
       displayName: "Building image."
       inputs:
-        containerRegistry: "cl-demo-sub1acr"
-        repository: $(repositoryName)
-        tags: $(tagName)
+        containerRegistry: ${{ parameters.acrServiceConnection }}
+        repository: $(imageName)
+        tags: $(imageTag)
         command: build
         Dockerfile: $(dockerfilePath)
+        arguments: |
+          --build-arg CORRETTO_MAJOR=21
+          --build-arg DEBIAN_VERSION=12
+          --build-arg VERSION=$(imageTag)
 
     - task: Docker@2
-      displayName: "Pushing image to the ACR"
+      displayName: "Pushing image to the ACR $(acrName)"
       inputs:
-        containerRegistry: "cl-demo-sub1acr"
-        repository: $(repositoryName)
-        tags: $(tagName)
+        containerRegistry: ${{ parameters.acrServiceConnection }}
+        repository: $(imageName)
+        tags: $(imageTag)
         command: push
 
     - task: CmdLine@2
       displayName: "Run trivy scan"
       inputs:
         script: |
-          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag)
+          mkdir -p $(Build.ArtifactStagingDirectory)/_buildOutput
+          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
+          trivy image --exit-code 0 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
+          ls -la $(Build.ArtifactStagingDirectory)/_buildOutput/
+          # the gate: fail on HIGH or CRITICAL findings
           trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag)
-
           echo SCAN FINISHED
 
-    - task: CmdLine@2
-      displayName: "Run trivy scan"
-      inputs:
-        script: |
-          trivy image --exit-code 0 --severity LOW,MEDIUM $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-medium-low.txt
-          trivy image --exit-code 1 --severity HIGH,CRITICAL $(acrName)/$(imageName):$(imageTag) > $(Build.ArtifactStagingDirectory)/_buildOutput/$(imageName)-$(imageTag)-critical-high.txt
-          ls -la $(Build.ArtifactStagingDirectory)/_buildOutput/
-
-    - task: CopyFiles@2
-      inputs:
-        contents: '_buildOutput/**'
-        targetFolder: $(Build.ArtifactStagingDirectory)
-
     - task: PublishBuildArtifacts@1
+      displayName: "Publish scan reports"
+      condition: always()
       inputs:
-        pathToPublish: $(Build.ArtifactStagingDirectory)
+        pathToPublish: $(Build.ArtifactStagingDirectory)/_buildOutput
         artifactName: ScanReports
