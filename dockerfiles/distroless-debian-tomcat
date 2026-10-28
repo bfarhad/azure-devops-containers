@@ -1,31 +1,39 @@
-FROM debian AS env_box
+FROM debian:12.5-slim AS env_box
 
-ARG TOMCAT_V_VERSION
-ARG TOMCAT_VERSION
+ARG CORRETTO_MAJOR=21
+ARG TOMCAT_VERSION=10.1.24
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CATALINA_BASE="/opt/apache-tomcat-10"
 ENV JAVA_HOME="/java"
 
-RUN apt-get -q update; \
-  apt-get -q install -y curl tar \
-  && TMP_DIR=$(mktemp -d) \
-  && curl -Ls \
-    https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz \
-    | tar -xz -C $TMP_DIR --strip-components=1 \
-  && mv $TMP_DIR /java
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    tar \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p ${JAVA_HOME} ${CATALINA_BASE} \
+  && curl -fsSL "https://corretto.aws/downloads/latest/amazon-corretto-${CORRETTO_MAJOR}-x64-linux-jdk.tar.gz" \
+    | tar -xz -C ${JAVA_HOME} --strip-components=1 \
+  && curl -fsSL "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz" -o /tmp/tomcat.tar.gz \
+  && curl -fsSL "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512" -o /tmp/tomcat.tar.gz.sha512 \
+  && echo "$(awk '{print $1}' /tmp/tomcat.tar.gz.sha512)  /tmp/tomcat.tar.gz" | sha512sum -c - \
+  && tar -xzf /tmp/tomcat.tar.gz -C ${CATALINA_BASE} --strip-components=1 \
+  && rm -rf /tmp/tomcat.tar.gz /tmp/tomcat.tar.gz.sha512 \
+  && rm -rf \
+    ${CATALINA_BASE}/webapps/docs \
+    ${CATALINA_BASE}/webapps/examples \
+    ${CATALINA_BASE}/webapps/host-manager \
+    ${CATALINA_BASE}/webapps/manager \
+  && mkdir -p \
+    ${CATALINA_BASE}/logs \
+    ${CATALINA_BASE}/temp \
+    ${CATALINA_BASE}/work \
+    ${CATALINA_BASE}/webapps
 
-RUN apt-get update; \
-  apt-get -y install curl tar \
-  && TOMCAT_TMP_DIR=$(mktemp -d) \
-  && curl -Ls \
-    https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.24/bin/apache-tomcat-10.1.24.tar.gz \
-    | tar -xz -C $TOMCAT_TMP_DIR --strip-components=1 \
-  && cp -r $TOMCAT_TMP_DIR/ $CATALINA_BASE
+FROM gcr.io/distroless/base-debian12:nonroot
 
-FROM gcr.io/distroless/base:debug
-
-LABEL "Base"="google distroless on debian 10" \
+LABEL "Base"="google distroless on debian 12" \
   "release"="dev" \
   "owner"="Vi"
 
@@ -34,10 +42,11 @@ ENV CATALINA_BASE=/opt/apache-tomcat-10
 ENV CATALINA_HOME=$CATALINA_BASE
 ENV CLASSPATH=$CATALINA_BASE/bin/bootstrap.jar:$CATALINA_BASE/bin/tomcat-juli.jar
 ENV PATH=$PATH:$CATALINA_BASE/bin:/java/bin
-ENV LD_LIBRARY_PATH=/opt/apache-tomcat-10/native_lib
 ENV _JAVA_OPTIONS="-Djava.util.logging.config.file=$CATALINA_BASE/conf/logging.properties -Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager -Dcatalina.base=$CATALINA_BASE -Dcatalina.home=$CATALINA_HOME"
 
-COPY --from=env_box --chown=nonroot $CATALINA_BASE $CATALINA_BASE
+COPY --from=env_box --chown=65532:65532 $CATALINA_BASE $CATALINA_BASE
+# The JDK needs zlib, which the distroless base image does not ship.
+COPY --from=env_box /usr/lib/x86_64-linux-gnu/libz.so.1* /usr/lib/x86_64-linux-gnu/
 COPY --from=env_box $JAVA_HOME $JAVA_HOME
 
 WORKDIR $CATALINA_BASE

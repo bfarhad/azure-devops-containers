@@ -1,0 +1,39 @@
+# Debian 12 only: Debian 11 is end of life and its package files no longer download.
+ARG DEBIAN_VERSION=12
+
+FROM debian:${DEBIAN_VERSION}-slim AS env_box
+
+ARG CORRETTO_MAJOR=21
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    tar \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /opt/java \
+  && curl -fsSL "https://corretto.aws/downloads/latest/amazon-corretto-${CORRETTO_MAJOR}-x64-linux-jdk.tar.gz" \
+    | tar -xz -C /opt/java --strip-components=1
+
+# Amazon Corretto requires glibc; distroless/static lacks glibc and cannot run a JDK, so base is kept.
+FROM gcr.io/distroless/base-debian${DEBIAN_VERSION}:nonroot
+
+ARG SOURCE=""
+ARG REVISION=""
+ARG CREATED=""
+ARG VERSION=""
+
+LABEL org.opencontainers.image.source="${SOURCE}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      org.opencontainers.image.version="${VERSION}"
+
+ENV JAVA_HOME=/opt/java \
+    PATH="/opt/java/bin:${PATH}"
+
+# The JDK needs zlib, which the distroless base image does not ship.
+COPY --from=env_box /usr/lib/x86_64-linux-gnu/libz.so.1* /usr/lib/x86_64-linux-gnu/
+COPY --from=env_box --chown=nonroot:nonroot /opt/java /opt/java
+
+USER nonroot
